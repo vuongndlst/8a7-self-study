@@ -2,6 +2,8 @@
 
 Web quản lý giờ tự học cho lớp 8A7 theo quy trình **Plan → Do → Reflect**.
 
+**Đang chạy tại:** https://vuongndlst.github.io/8a7-self-study/
+
 - Frontend: React + Vite
 - Hosting: GitHub Pages
 - Database/Auth/Storage: Supabase
@@ -41,6 +43,9 @@ VITE_TEACHER_EMAIL=ict.vuongnd@lsts.edu.vn
 ```
 
 Publishable key có thể xuất hiện trong frontend. Không đưa `service_role`/server secret vào các file trên.
+
+> Vite chỉ nạp `.env.production` khi **build**. Muốn `npm run dev` chạy được, cần thêm
+> `.env.local` với đúng 3 dòng trên. File này đã nằm trong `.gitignore`.
 
 ## 4. Tạo database + RLS + Storage
 
@@ -84,6 +89,10 @@ TEACHER_EMAIL=ict.vuongnd@lsts.edu.vn
 TEACHER_PASSWORD=YOUR_STRONG_PASSWORD
 TEACHER_NAME=Nguyễn Đình Vương
 ```
+
+Supabase có hai thế hệ key server-side. Script nhận cả hai: `SUPABASE_SERVICE_ROLE_KEY`
+(legacy) hoặc `SUPABASE_SECRET_KEY` (dạng `sb_secret_…`). Dòng nào còn nguyên giá trị mẫu
+(`PASTE_…`, `SET_A_…`, `YOUR_…`) sẽ bị bỏ qua như chưa điền.
 
 Sau đó:
 
@@ -159,16 +168,21 @@ không bị lỗi 404 khi refresh route.
 
 ## 10. Kiểm tra trước khi dùng thật
 
-- [ ] Chạy `schema.sql` thành công.
-- [ ] Seed đủ 31 HS.
-- [ ] Deploy 2 Edge Functions.
-- [ ] Tạo teacher.
-- [ ] Tạo thử 1 tài khoản HS test.
-- [ ] HS test không xem được roster/HS khác.
-- [ ] Upload thử JPG/PDF.
-- [ ] Teacher mở được signed URL minh chứng.
-- [ ] Teacher reset password test.
-- [ ] `git status` không có `.env.admin` hoặc `seed-roster.private.sql`.
+Đã chạy và đạt trong lần triển khai ngày 09/08/2026:
+
+- [x] Chạy `schema.sql` thành công — 5 bảng, 15 RLS policy, 3 storage policy, bucket `evidence`.
+- [x] Seed đủ 31 HS.
+- [x] Deploy 2 Edge Functions.
+- [x] Tạo teacher.
+- [x] Tạo thử 1 tài khoản HS test (MSHS 9999999, đã xóa sau khi test).
+- [x] HS test không xem được roster/HS khác — roster trả 0 dòng; ghi vào roster, mạo danh HS
+      khác, tạo kế hoạch ngày quá khứ, tự nâng quyền teacher đều bị chặn 403.
+- [x] Upload thử JPG/PDF — upload vào thư mục của mình OK, vào thư mục HS khác bị chặn 403.
+- [x] Teacher mở được signed URL minh chứng; URL public của bucket bị chặn.
+- [x] Teacher reset password test — mật khẩu yếu bị Edge Function từ chối; HS không gọi được
+      function này.
+- [x] Đăng ký trùng MSHS → 409; sai tên so với roster → 400.
+- [x] `git status` không có `.env`, `.env.admin` hoặc `seed-roster.private.sql`.
 
 ## 11. Cấu trúc
 
