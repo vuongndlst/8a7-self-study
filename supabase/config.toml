@@ -1,0 +1,5 @@
+[functions.register-student]
+verify_jwt = false
+
+[functions.teacher-reset-password]
+verify_jwt = false

@@ -1,0 +1,19 @@
+node_modules
+dist
+.DS_Store
+
+# Mọi file .env chứa secret — KHÔNG commit.
+.env
+.env.local
+.env.admin
+.env.*.local
+
+# Chỉ các file mẫu/không chứa secret được commit.
+!.env.example
+!.env.admin.example
+!.env.production
+
+supabase/seed-roster.private.sql
+supabase/.temp/
+
+.claude/
