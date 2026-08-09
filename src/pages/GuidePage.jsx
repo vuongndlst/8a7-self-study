@@ -22,6 +22,6 @@ export default function GuidePage() {
       <div className="three-rule-grid"><div><span>TRƯỚC</span><strong>Lên kế hoạch</strong><p>Ưu tiên nhiệm vụ theo thời hạn, đăng ký thiết bị nếu cần.</p></div><div><span>TRONG</span><strong>Học theo kế hoạch</strong><p>Ổn định đúng giờ và tập trung vào mục tiêu đã đặt.</p></div><div><span>SAU</span><strong>Nhìn lại</strong><p>Cập nhật kết quả và điều mình cần hỗ trợ.</p></div></div>
     </section>
 
-    <div className="notice warning"><AlertTriangle/><div><strong>Lưu ý quan trọng</strong><p>Không dùng tên, MSHS hoặc tài khoản của bạn khác. Nếu quên mật khẩu, liên hệ giáo viên để được đặt lại. Không tạo tài khoản lần hai.</p></div></div>
+    <div className="notice warning"><AlertTriangle/><div><strong>Lưu ý quan trọng</strong><p>Không dùng tên, MSHS hoặc tài khoản của bạn khác. Quên mật khẩu thì bấm <strong>“Quên mật khẩu”</strong> ở trang đăng nhập để nhận link vào email trường, hoặc nhờ giáo viên đặt lại. Sau khi giáo viên đặt lại, em sẽ phải tự đặt mật khẩu riêng ngay lần đăng nhập kế tiếp. Không tạo tài khoản lần hai.</p></div></div>
   </div>
 }

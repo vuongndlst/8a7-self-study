@@ -1,0 +1,33 @@
+name: Nhắc giờ tự học hằng ngày
+
+on:
+  schedule:
+    # 17:00 giờ Việt Nam = 10:00 UTC, mỗi ngày trong tuần.
+    - cron: '0 10 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: 'Chạy thử, không gửi email'
+        type: boolean
+        default: true
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gọi Edge Function daily-reminders
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          DRY_RUN: ${{ inputs.dryRun && '1' || '0' }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "Thiếu secret SUPABASE_URL hoặc CRON_SECRET — bỏ qua."
+            exit 0
+          fi
+          code=$(curl -sS -o response.json -w '%{http_code}' \
+            -X POST "$SUPABASE_URL/functions/v1/daily-reminders?dryRun=$DRY_RUN" \
+            -H "x-cron-secret: $CRON_SECRET")
+          cat response.json
+          echo
+          test "$code" = "200"

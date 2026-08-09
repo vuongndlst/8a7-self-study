@@ -1,27 +1,14 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-function validStudentPassword(password: string, mshs: string) {
-  return password.length >= 10
-    && password.length <= 64
-    && /[A-Z]/.test(password)
-    && /[a-z]/.test(password)
-    && /\d/.test(password)
-    && !/\s/.test(password)
-    && !password.includes(mshs)
-}
+import {
+  corsHeaders, json, validStudentPassword, PASSWORD_RULE_MESSAGE, sendEmail, emailLayout,
+} from '../_shared/common.ts'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ ok: false, error: 'Method not allowed' }, 405)
 
   try {
-    const authHeader = req.headers.get('Authorization') || ''
-    const token = authHeader.replace(/^Bearer\s+/i, '')
+    const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
     if (!token) return json({ ok: false, error: 'Chưa đăng nhập.' }, 401)
 
     const url = Deno.env.get('SUPABASE_URL')!
@@ -31,32 +18,62 @@ Deno.serve(async (req) => {
     const { data: userData, error: userError } = await admin.auth.getUser(token)
     if (userError || !userData.user) return json({ ok: false, error: 'Phiên đăng nhập không hợp lệ.' }, 401)
 
-    const { data: teacher } = await admin.from('profiles').select('role').eq('id', userData.user.id).eq('role', 'teacher').maybeSingle()
+    const { data: teacher } = await admin.from('profiles')
+      .select('role, full_name').eq('id', userData.user.id).eq('role', 'teacher').maybeSingle()
     if (!teacher) return json({ ok: false, error: 'Không có quyền giáo viên.' }, 403)
 
     const { studentId, newPassword } = await req.json()
     if (!studentId) return json({ ok: false, error: 'Thiếu học sinh cần đặt lại mật khẩu.' }, 400)
 
-    const { data: student } = await admin.from('profiles').select('id, role, mshs').eq('id', studentId).eq('role', 'student').maybeSingle()
+    const { data: student } = await admin.from('profiles')
+      .select('id, role, mshs, full_name').eq('id', studentId).eq('role', 'student').maybeSingle()
     if (!student?.mshs) return json({ ok: false, error: 'Không tìm thấy học sinh.' }, 404)
+
+    // Giáo viên chỉ được đặt lại mật khẩu cho học sinh LỚP MÌNH PHỤ TRÁCH.
+    const { data: allowed } = await admin
+      .from('enrollments')
+      .select('class_id, students!inner(claimed_user_id), classes!inner(school_years!inner(is_active))')
+      .eq('students.claimed_user_id', studentId)
+      .eq('is_active', true)
+    const classIds = (allowed ?? [])
+      .filter((r: any) => r.classes?.school_years?.is_active)
+      .map((r: any) => r.class_id)
+    if (classIds.length === 0) return json({ ok: false, error: 'Học sinh không thuộc lớp đang hoạt động.' }, 403)
+
+    const { data: link } = await admin
+      .from('class_teachers')
+      .select('class_id')
+      .eq('teacher_id', userData.user.id)
+      .in('class_id', classIds)
+      .maybeSingle()
+    if (!link) return json({ ok: false, error: 'Học sinh này không thuộc lớp bạn phụ trách.' }, 403)
 
     const cleanPassword = String(newPassword || '')
     if (!validStudentPassword(cleanPassword, student.mshs)) {
-      return json({ ok: false, error: 'Mật khẩu cần tối thiểu 10 ký tự, có chữ hoa, chữ thường, số; không có khoảng trắng và không chứa MSHS.' }, 400)
+      return json({ ok: false, error: PASSWORD_RULE_MESSAGE }, 400)
     }
 
     const { error } = await admin.auth.admin.updateUserById(studentId, { password: cleanPassword })
     if (error) throw error
+
+    // Bắt học sinh tự đặt mật khẩu riêng ngay lần đăng nhập kế tiếp.
+    const { error: flagError } = await admin.from('profiles')
+      .update({ must_change_password: true }).eq('id', studentId)
+    if (flagError) throw flagError
+
+    const { data: u } = await admin.auth.admin.getUserById(studentId)
+    if (u?.user?.email) {
+      await sendEmail(u.user.email, 'Mật khẩu Self-Study của em vừa được đặt lại', emailLayout(
+        `Chào ${student.full_name}`,
+        `<p style="margin:0 0 10px">Giáo viên <strong>${teacher.full_name}</strong> vừa đặt lại mật khẩu tài khoản giờ tự học của em.</p>
+         <p style="margin:0 0 10px">Mật khẩu tạm được giáo viên đưa trực tiếp. Ngay khi đăng nhập, hệ thống sẽ yêu cầu em <strong>đặt mật khẩu riêng</strong>.</p>
+         <p style="margin:10px 0 0;font-size:13px;color:#6b7c74">Nếu em không yêu cầu việc này, hãy báo lại giáo viên.</p>`,
+      ))
+    }
+
     return json({ ok: true })
   } catch (error) {
     console.error(error)
     return json({ ok: false, error: 'Không thể đặt lại mật khẩu.' }, 500)
   }
 })
-
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json; charset=utf-8' },
-  })
-}

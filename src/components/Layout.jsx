@@ -2,6 +2,9 @@ import { BookOpen, Home, LogIn, LogOut, ShieldCheck } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+// Nhãn lớp hiển thị ở góc trái. Sang lớp/năm khác chỉ cần đổi biến môi trường.
+const BRAND_MARK = import.meta.env.VITE_BRAND_MARK || '8A7'
+
 export default function Layout({children}) {
   const {profile,signOut}=useAuth()
   const navigate=useNavigate()
@@ -10,7 +13,7 @@ export default function Layout({children}) {
   const active=(path)=>location.pathname===path
   return <div className="app-shell">
     <header className="topbar">
-      <Link className="brand" to="/"><span className="brand-mark">8A7</span><span><strong>Self-Study</strong><small>Plan · Do · Reflect</small></span></Link>
+      <Link className="brand" to="/"><span className="brand-mark">{BRAND_MARK}</span><span><strong>Self-Study</strong><small>Plan · Do · Reflect</small></span></Link>
       <nav>
         <Link className={active('/')?'active':''} to="/"><Home size={17}/> <span>Trang chủ</span></Link>
         <Link className={active('/guide')?'active':''} to="/guide"><BookOpen size={17}/> <span>Hướng dẫn</span></Link>
@@ -21,6 +24,6 @@ export default function Layout({children}) {
       </nav>
     </header>
     <main>{children}</main>
-    <footer><strong>8A7 Self-Study</strong><span>Hệ thống hỗ trợ lập kế hoạch và phản tư giờ tự học.</span></footer>
+    <footer><strong>{BRAND_MARK} Self-Study</strong><span>Hệ thống hỗ trợ lập kế hoạch và phản tư giờ tự học.</span></footer>
   </div>
 }

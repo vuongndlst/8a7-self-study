@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "create-teacher": "node scripts/create-teacher.mjs"
+    "create-teacher": "node scripts/create-teacher.mjs",
+    "setup-class": "node scripts/setup-class.mjs",
+    "classes": "node scripts/setup-class.mjs --list"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",

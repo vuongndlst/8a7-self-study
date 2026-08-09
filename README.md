@@ -1,206 +1,222 @@
-# 8A7 Self-Study
+# Self-Study — quản lý giờ tự học
 
-Web quản lý giờ tự học cho lớp 8A7 theo quy trình **Plan → Do → Reflect**.
+Web quản lý giờ tự học theo quy trình **Plan → Do → Reflect**.
 
 **Đang chạy tại:** https://vuongndlst.github.io/8a7-self-study/
 
-- Frontend: React + Vite
-- Hosting: GitHub Pages
-- Database/Auth/Storage: Supabase
-- Routing: HashRouter (ổn định khi refresh trên GitHub Pages)
-- Tiết tự học: 1–9
-- Roster: 31 HS, đối chiếu Họ tên + MSHS khi đăng ký lần đầu
-- Minh chứng: JPG / PNG / PDF ≤ 5 MB hoặc link; tối đa 3 minh chứng/kế hoạch
+- Frontend: React + Vite · Hosting: GitHub Pages · Backend: Supabase
+- Routing: HashRouter (không lỗi 404 khi refresh trên GitHub Pages)
+- Tiết tự học 1–9 · Minh chứng JPG/PNG/PDF ≤ 5 MB hoặc link, tối đa 3/kế hoạch
 
-## 1. Password rule học sinh
+## 1. Mô hình dữ liệu (đa năm học, đa lớp, đa giáo viên)
 
-Học sinh tự tạo mật khẩu. Rule:
+Mỗi học sinh giữ **một tài khoản duy nhất suốt các năm**. Lên lớp = thêm một dòng ghi
+danh, không tạo lại tài khoản, không mất lịch sử.
 
-- tối thiểu 10 ký tự;
-- có chữ hoa + chữ thường + số;
-- không có khoảng trắng;
-- không chứa MSHS.
+```text
+school_years   2026-2027, 2027-2028…   (đúng một năm is_active)
+classes        8A7 thuộc năm nào
+students       MSHS + họ tên, theo em suốt các năm
+enrollments    em nào học lớp nào       ← "danh sách lớp"
+class_teachers giáo viên phụ trách lớp nào
+```
 
-Rule được kiểm tra ở `src/utils/password.js` và lặp lại ở Edge Functions để không thể bỏ qua bằng DevTools/API.
+Giáo viên **chỉ thấy lớp mình phụ trách** — kế hoạch, hồ sơ, minh chứng, và chỉ đặt lại
+được mật khẩu cho học sinh lớp mình. Nhiều giáo viên dùng chung một hệ thống mà không
+thấy dữ liệu của nhau.
 
-## 2. Cài package
+## 2. Tài khoản học sinh
+
+MSHS chính là phần trước `@` trong email trường: `2406002` → `2406002@lsts.edu.vn`.
+Nhờ vậy Supabase gửi được email thật (khôi phục mật khẩu, thông báo, nhắc quá hạn).
+
+### Luật mật khẩu
+
+Tối thiểu 10 ký tự, có chữ hoa + chữ thường + số, không khoảng trắng, không chứa MSHS.
+
+Luật được ép ở **ba tầng** để không thể bỏ qua bằng DevTools:
+
+| Tầng | Chỗ nào | Chặn được gì |
+|---|---|---|
+| Giao diện | `src/utils/password.js` | Báo lỗi sớm cho học sinh |
+| Supabase Auth | Password policy của project | Mọi đường đổi mật khẩu, kể cả gọi API trực tiếp |
+| Edge Function | `student-change-password` | Thêm luật "không chứa MSHS" |
+
+### Khi giáo viên đặt lại mật khẩu
+
+`teacher-reset-password` bật cờ `profiles.must_change_password`. Lần đăng nhập kế tiếp,
+học sinh bị chặn ở màn **“Đặt mật khẩu riêng của em”** trước khi vào được bất kỳ trang
+nào. Chỉ Edge Function mới hạ được cờ — học sinh không tự sửa `profiles` được.
+
+### Quên mật khẩu
+
+Học sinh nhập MSHS rồi bấm *“Quên mật khẩu”* ở trang đăng nhập → Supabase gửi link vào
+email trường. Cần cấu hình SMTP ở mục 6.
+
+## 3. Cài đặt và chạy
 
 ```bash
 npm install
 npm run dev
 ```
 
-> Project dùng `@supabase/supabase-js`; không dùng `@supabase/ssr` vì GitHub Pages là frontend tĩnh, không chạy Next.js middleware/Server Components.
-
-## 3. Kết nối Supabase
-
-Project đã có `.env.production` và `.env.example` với publishable URL/key của project hiện tại:
+Vite chỉ nạp `.env.production` khi **build**. Muốn `npm run dev` chạy được, tạo thêm
+`.env.local` với nội dung như `.env.example` (file này đã gitignore).
 
 ```env
 VITE_SUPABASE_URL=https://qzvlwffxvewhfztnxxzb.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_3C1vKuN1fLbiqZkRb7lEpg_oK0ekWfv
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
 VITE_TEACHER_EMAIL=ict.vuongnd@lsts.edu.vn
+VITE_STUDENT_EMAIL_DOMAIN=lsts.edu.vn
+VITE_BRAND_MARK=8A7
 ```
 
-Publishable key có thể xuất hiện trong frontend. Không đưa `service_role`/server secret vào các file trên.
+Publishable key được phép lộ ra frontend. **Không** đưa `service_role` / secret key vào
+các file `VITE_*`.
 
-> Vite chỉ nạp `.env.production` khi **build**. Muốn `npm run dev` chạy được, cần thêm
-> `.env.local` với đúng 3 dòng trên. File này đã nằm trong `.gitignore`.
+## 4. Dựng cơ sở dữ liệu
 
-## 4. Tạo database + RLS + Storage
+Supabase Dashboard → SQL Editor → chạy toàn bộ `supabase/schema.sql`.
 
-Supabase Dashboard → **SQL Editor**:
+> File có khối `drop table` để nâng cấp từ v1. Nếu đã có dữ liệu thật của học sinh,
+> **đừng chạy khối đó** — hãy viết migration chuyển dữ liệu sang cấu trúc mới.
 
-1. Chạy toàn bộ `supabase/schema.sql`.
-2. Sau đó chạy `supabase/seed-roster.private.sql`.
+Sau đó bật password policy: Authentication → Sign In / Providers → Password Requirements
+→ tối thiểu **10** ký tự, yêu cầu **chữ thường + chữ hoa + chữ số**.
 
-`seed-roster.private.sql` chứa danh sách 31 HS và đã nằm trong `.gitignore`.
+## 5. Tạo lớp và giáo viên
 
-## 5. Deploy Edge Functions
+Toàn bộ việc mở lớp gói trong một file JSON. Copy `admin/class.example.json`:
 
-Cài/login Supabase CLI, sau đó:
+```bash
+cp admin/class.example.json admin/8a7-2026-2027.json
+# sửa năm học, tên lớp, email giáo viên, danh sách học sinh
+npm run setup-class -- admin/8a7-2026-2027.json
+npm run classes      # xem lại toàn bộ năm / lớp / giáo viên
+```
+
+Script làm đủ 4 việc: năm học → lớp → tài khoản giáo viên → ghi danh học sinh. Học sinh
+có thể khai trong `students`, hoặc trỏ `studentsCsv` tới file CSV hai cột `mshs,full_name`
+xuất từ Excel.
+
+- **Giáo viên mới**: tạo file JSON cho lớp của họ. Script in **một lần duy nhất** mật khẩu
+  tạm; đưa trực tiếp cho giáo viên. Giáo viên đã có tài khoản thì mật khẩu giữ nguyên.
+- **Sang năm học mới**: file JSON mới với `schoolYear` mới và lớp mới. Đặt `isActive: true`
+  cho năm mới — script tự tắt các năm còn lại. Học sinh giữ nguyên tài khoản và lịch sử.
+- **Học sinh chuyển lớp**: bỏ khỏi danh sách rồi chạy lại — script chỉ tắt ghi danh, không
+  xóa dữ liệu cũ.
+
+File `admin/*.json` và `admin/*.csv` đã gitignore vì chứa tên học sinh.
+
+## 6. Email (tùy chọn nhưng nên có)
+
+Domain trường nằm trên **Microsoft 365**. Đặt secret cho Supabase project — Dashboard →
+Edge Functions → Secrets — theo **một** trong ba cách:
+
+```env
+# 1. Microsoft Graph (khuyến nghị: nhiều tenant M365 đã tắt SMTP AUTH)
+MS_TENANT_ID=…
+MS_CLIENT_ID=…
+MS_CLIENT_SECRET=…
+EMAIL_FROM=selfstudy@lsts.edu.vn
+
+# 2. SMTP Exchange Online (cần quản trị bật SMTP AUTH cho hộp thư gửi)
+SMTP_HOST=smtp.office365.com
+SMTP_PORT=587
+SMTP_USER=selfstudy@lsts.edu.vn
+SMTP_PASS=…
+EMAIL_FROM=selfstudy@lsts.edu.vn
+
+# 3. Resend
+RESEND_API_KEY=…
+EMAIL_FROM=…
+```
+
+Với Graph: App registration + quyền **ứng dụng** `Mail.Send`, đã admin-consent.
+
+Chưa đặt gì thì mọi lời gọi gửi mail tự bỏ qua, các chức năng khác vẫn chạy bình thường.
+
+Riêng **“quên mật khẩu”** dùng bộ gửi mail của Supabase Auth, chỉ hỗ trợ SMTP — cấu hình
+ở Authentication → Emails → SMTP Settings với thông số Exchange Online ở trên. SMTP mặc
+định của Supabase giới hạn 2 email/giờ, chỉ đủ để thử.
+
+Thêm secret `APP_URL=https://vuongndlst.github.io/8a7-self-study/` để email có nút bấm.
+
+## 7. Nhắc quá hạn hằng ngày
+
+`.github/workflows/daily-reminders.yml` chạy 17:00 giờ Việt Nam các ngày trong tuần, gọi
+Edge Function `daily-reminders`. Function gửi:
+
+- email nhắc **từng học sinh** chưa đăng ký kế hoạch cho ngày mai, hoặc còn tiết đã qua
+  mà chưa cập nhật kết quả;
+- một email **tổng hợp cho giáo viên** từng lớp.
+
+Cần đặt secret cho repo (Settings → Secrets → Actions): `SUPABASE_URL`, `CRON_SECRET`;
+và đặt `CRON_SECRET` giống hệt trong Supabase Edge Functions Secrets.
+
+Chạy thử không gửi mail: Actions → *Nhắc giờ tự học hằng ngày* → Run workflow (giữ
+`dryRun` = true).
+
+## 8. Deploy Edge Functions
 
 ```bash
 npx supabase login
 npx supabase link --project-ref qzvlwffxvewhfztnxxzb
 npx supabase functions deploy register-student --no-verify-jwt
 npx supabase functions deploy teacher-reset-password --no-verify-jwt
+npx supabase functions deploy student-change-password --no-verify-jwt
+npx supabase functions deploy daily-reminders --no-verify-jwt
 ```
 
-`supabase/config.toml` cũng đã để `verify_jwt = false`. Đây là chủ ý vì project đang dùng publishable key mới; hai function tự kiểm tra quyền cần thiết bên trong:
+`verify_jwt = false` là chủ ý — mỗi function tự kiểm quyền bên trong:
 
-- `register-student`: public để HS chưa có tài khoản đăng ký, nhưng phải khớp roster và MSHS chưa được claim.
-- `teacher-reset-password`: tự đọc Bearer token, xác minh người gọi có profile `teacher` rồi mới dùng Admin API.
+| Function | Ai gọi được | Tự kiểm gì |
+|---|---|---|
+| `register-student` | công khai | khớp ghi danh năm hiện hành + MSHS chưa claim |
+| `teacher-reset-password` | giáo viên | đọc Bearer token, phải là teacher **và** phụ trách lớp của HS đó |
+| `student-change-password` | học sinh | phải là student, đúng mật khẩu hiện tại, đủ luật mật khẩu |
+| `daily-reminders` | cron | header `x-cron-secret` |
 
-## 6. Tạo tài khoản Teacher
+## 9. Quyền dữ liệu
 
-Không cần gửi password teacher vào source code.
+**Học sinh** — chỉ đọc/ghi dữ liệu của chính mình; không đọc danh sách lớp; chỉ tạo kế
+hoạch cho hôm nay trở đi; chỉ sửa/xóa kế hoạch còn ở tương lai; chỉ nộp phản tư và minh
+chứng vào ngày học hoặc sau đó; không tự duyệt đăng ký thiết bị; không tự viết nhận xét
+giáo viên; không tự hạ cờ đổi mật khẩu.
 
-```bash
-cp .env.admin.example .env.admin
-```
+**Giáo viên** — đọc toàn bộ dữ liệu **lớp mình phụ trách**; xem minh chứng bằng signed
+URL; duyệt/từ chối đăng ký thiết bị; nhận xét phản tư và đánh dấu đã xử lý yêu cầu hỗ
+trợ; đặt lại mật khẩu học sinh lớp mình; xuất CSV. **Không** sửa hay xóa được kế hoạch,
+tự đánh giá của học sinh.
 
-Mở `.env.admin` và tự điền:
+Ranh giới được giữ bằng ba lớp: RLS theo dòng, grant theo bảng, và trigger tách cột
+(`plans_guard_columns`, `reflections_guard_columns`) — vì RLS chặn được dòng nhưng không
+chặn được cột.
 
-```env
-SUPABASE_URL=https://qzvlwffxvewhfztnxxzb.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_SIDE_KEY
-TEACHER_EMAIL=ict.vuongnd@lsts.edu.vn
-TEACHER_PASSWORD=YOUR_STRONG_PASSWORD
-TEACHER_NAME=Nguyễn Đình Vương
-```
-
-Supabase có hai thế hệ key server-side. Script nhận cả hai: `SUPABASE_SERVICE_ROLE_KEY`
-(legacy) hoặc `SUPABASE_SECRET_KEY` (dạng `sb_secret_…`). Dòng nào còn nguyên giá trị mẫu
-(`PASTE_…`, `SET_A_…`, `YOUR_…`) sẽ bị bỏ qua như chưa điền.
-
-Sau đó:
-
-```bash
-npm run create-teacher
-```
-
-`.env.admin` đã nằm trong `.gitignore`.
-
-## 7. Auth flow học sinh
-
-### Lần đầu
-
-1. HS mở `#/register`.
-2. Nhập Họ tên + MSHS + password.
-3. Edge Function đọc `student_roster` bằng server key.
-4. Nếu tên/MSHS khớp và chưa claim → `auth.admin.createUser()` tạo user Auth nội bộ.
-5. User nhận email nội bộ dạng `2406002@student.8a7.example.com` (HS không cần biết email này).
-6. `profiles` và `student_roster.claimed_user_id` được cập nhật.
-7. Frontend đăng nhập bằng MSHS + password.
-
-### Những lần sau
-
-Frontend tự ánh xạ:
-
-```text
-MSHS 2406002 → 2406002@student.8a7.example.com
-```
-
-rồi gọi `supabase.auth.signInWithPassword()`.
-
-## 8. Quyền dữ liệu
-
-### Student
-
-- chỉ đọc profile của mình;
-- chỉ đọc plan/reflection/evidence của mình;
-- chỉ tạo plan cho hôm nay hoặc tương lai;
-- chỉ chỉnh plan khi plan cũ còn ở tương lai;
-- chỉ nộp reflection/evidence cho plan của chính mình vào ngày học hoặc sau đó;
-- không đọc `student_roster`;
-- không đọc dữ liệu học sinh khác.
-
-### Teacher
-
-- đọc toàn bộ roster/profile/plan/reflection/evidence;
-- xem file minh chứng private bằng signed URL;
-- reset password HS thông qua Edge Function;
-- xuất CSV theo bộ lọc.
-
-## 9. GitHub Pages
-
-Push repo lên GitHub, sau đó Repository → **Settings → Pages → Source: GitHub Actions**.
-
-Workflow `.github/workflows/deploy-pages.yml` đã có sẵn. Mỗi lần push `main`, GitHub Actions sẽ chạy:
-
-```bash
-npm install
-npm run build
-```
-
-và publish thư mục `dist`.
-
-Vì app dùng `HashRouter`, URL dạng:
-
-```text
-https://USERNAME.github.io/REPO/#/login
-https://USERNAME.github.io/REPO/#/student
-https://USERNAME.github.io/REPO/#/teacher
-```
-
-không bị lỗi 404 khi refresh route.
-
-## 10. Kiểm tra trước khi dùng thật
-
-Đã chạy và đạt trong lần triển khai ngày 09/08/2026:
-
-- [x] Chạy `schema.sql` thành công — 5 bảng, 15 RLS policy, 3 storage policy, bucket `evidence`.
-- [x] Seed đủ 31 HS.
-- [x] Deploy 2 Edge Functions.
-- [x] Tạo teacher.
-- [x] Tạo thử 1 tài khoản HS test (MSHS 9999999, đã xóa sau khi test).
-- [x] HS test không xem được roster/HS khác — roster trả 0 dòng; ghi vào roster, mạo danh HS
-      khác, tạo kế hoạch ngày quá khứ, tự nâng quyền teacher đều bị chặn 403.
-- [x] Upload thử JPG/PDF — upload vào thư mục của mình OK, vào thư mục HS khác bị chặn 403.
-- [x] Teacher mở được signed URL minh chứng; URL public của bucket bị chặn.
-- [x] Teacher reset password test — mật khẩu yếu bị Edge Function từ chối; HS không gọi được
-      function này.
-- [x] Đăng ký trùng MSHS → 409; sai tên so với roster → 400.
-- [x] `git status` không có `.env`, `.env.admin` hoặc `seed-roster.private.sql`.
-
-## 11. Cấu trúc
+## 10. Cấu trúc
 
 ```text
 src/
-  components/
-  context/
-  lib/
-  pages/
-  utils/
+  components/   Layout · ProtectedRoute · PasswordGate · StatusBadge
+  context/      AuthContext (phiên, hồ sơ, lớp/năm, cờ khôi phục)
+  lib/          supabase.js (client, email học sinh, gọi Edge Function)
+  pages/        Home · Guide · Register · Login · Student · Teacher · NotFound
+  utils/        date.js · password.js
 supabase/
   schema.sql
-  seed-roster.private.sql     # private, gitignored
+  seed-roster.private.sql        # private, gitignored
   functions/
+    _shared/common.ts            # CORS, luật mật khẩu, gửi email
     register-student/
     teacher-reset-password/
+    student-change-password/
+    daily-reminders/
 scripts/
-  create-teacher.mjs
+  create-teacher.mjs             # tạo 1 giáo viên từ .env.admin
+  setup-class.mjs                # năm học + lớp + giáo viên + ghi danh
+admin/
+  class.example.json             # mẫu; file thật đã gitignore
 .github/workflows/
   deploy-pages.yml
+  daily-reminders.yml
 ```

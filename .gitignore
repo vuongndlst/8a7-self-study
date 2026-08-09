@@ -16,4 +16,9 @@ dist
 supabase/seed-roster.private.sql
 supabase/.temp/
 
+# Cấu hình lớp chứa tên học sinh — chỉ giữ lại file mẫu.
+admin/*.json
+admin/*.csv
+!admin/class.example.json
+
 .claude/

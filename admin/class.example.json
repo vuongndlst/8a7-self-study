@@ -1,0 +1,31 @@
+{
+  "_huong_dan": [
+    "Copy file này thành admin/<lop>-<nam>.json rồi sửa. File thật đã được gitignore vì chứa tên học sinh.",
+    "Chạy:  npm run setup-class -- admin/8a7-2026-2027.json",
+    "Xem lại: npm run setup-class -- --list",
+    "Sang năm mới: tạo file mới với schoolYear khác và lớp mới. Học sinh giữ nguyên tài khoản và lịch sử.",
+    "Thêm giáo viên khác: tạo file JSON riêng cho lớp của họ. Mỗi giáo viên chỉ thấy lớp mình phụ trách.",
+    "Danh sách học sinh: dùng \"students\" nội tuyến, HOẶC \"studentsCsv\" trỏ tới file CSV hai cột mshs,full_name."
+  ],
+
+  "schoolYear": {
+    "name": "2026-2027",
+    "startDate": "2026-08-01",
+    "endDate": "2027-05-31",
+    "isActive": true
+  },
+
+  "class": {
+    "name": "8A7"
+  },
+
+  "teacher": {
+    "email": "giaovien@lsts.edu.vn",
+    "fullName": "Nguyễn Văn A"
+  },
+
+  "students": [
+    { "mshs": "2406002", "full_name": "Nguyễn Văn A" },
+    { "mshs": "2406008", "full_name": "Trần Thị B" }
+  ]
+}

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Check, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, UserRoundCheck, X } from 'lucide-react'
-import { supabase, studentInternalEmail } from '../lib/supabase'
+import { supabase, studentEmail, STUDENT_EMAIL_DOMAIN } from '../lib/supabase'
 import { passwordChecks, validateStudentPassword } from '../utils/password'
 
 export default function RegisterPage() {
@@ -34,7 +34,7 @@ export default function RegisterPage() {
     }
 
     const { error: loginError } = await supabase.auth.signInWithPassword({
-      email: studentInternalEmail(cleanMshs),
+      email: studentEmail(cleanMshs),
       password: form.password,
     })
     setBusy(false)
@@ -46,7 +46,7 @@ export default function RegisterPage() {
     <section className="auth-visual">
       <span className="pill-label"><ShieldCheck size={15}/> Đăng ký an toàn</span>
       <h1>Một tài khoản riêng cho kế hoạch tự học của em.</h1>
-      <p>Hệ thống chỉ cho phép tạo tài khoản khi <strong>Họ tên + MSHS</strong> khớp đúng danh sách lớp 8A7.</p>
+      <p>Hệ thống chỉ cho phép tạo tài khoản khi <strong>Họ tên + MSHS</strong> khớp đúng danh sách lớp của năm học hiện hành.</p>
       <div className="auth-visual-steps">
         <div><span>01</span><p><strong>Xác minh</strong><small>Nhập đúng họ tên và MSHS.</small></p></div>
         <div><span>02</span><p><strong>Tạo mật khẩu</strong><small>Chỉ em biết và sử dụng.</small></p></div>
@@ -64,7 +64,8 @@ export default function RegisterPage() {
 
       <label>MSHS *</label>
       <input name="mshs" value={form.mshs} onChange={update} inputMode="numeric" pattern="[0-9]*" maxLength={7} placeholder="Ví dụ: 2406002" autoComplete="username" required/>
-      <div className="notice compact"><LockKeyhole size={17}/><span>Không sử dụng MSHS của bạn khác. Thông tin sẽ được đối chiếu với danh sách 31 học sinh đã có.</span></div>
+      <div className="notice compact"><LockKeyhole size={17}/><span>Không sử dụng MSHS của bạn khác. Thông tin sẽ được đối chiếu với danh sách lớp.</span></div>
+      {/^\d{7}$/.test(form.mshs.trim()) && <small className="muted-text">Tài khoản sẽ gắn với email trường: <strong>{form.mshs.trim()}@{STUDENT_EMAIL_DOMAIN}</strong></small>}
 
       <label>Mật khẩu riêng *</label>
       <div className="password-field">
