@@ -86,14 +86,19 @@ Sau đó bật password policy: Authentication → Sign In / Providers → Passw
 
 ## 5. Tạo lớp và giáo viên
 
-Toàn bộ việc mở lớp gói trong một file JSON. Copy `admin/class.example.json`:
+Mỗi lớp là **một file JSON** trong `admin/` — đó là nguồn duy nhất, không cần chạy SQL.
+Lớp 8A7 năm 2026-2027 đã có sẵn ở `admin/8a7-2026-2027.json`.
 
 ```bash
-cp admin/class.example.json admin/8a7-2026-2027.json
-# sửa năm học, tên lớp, email giáo viên, danh sách học sinh
+# sửa file rồi chạy lại — script chạy lại bao nhiêu lần cũng được
 npm run setup-class -- admin/8a7-2026-2027.json
 npm run classes      # xem lại toàn bộ năm / lớp / giáo viên
 ```
+
+Lớp mới thì copy `admin/class.example.json` thành file riêng.
+
+> `supabase/seed-roster.private.sql` là cách cũ, làm cùng một việc bằng SQL. Đã dùng
+> file JSON thì không cần tới nó nữa — xóa được cho gọn.
 
 Script làm đủ 4 việc: năm học → lớp → tài khoản giáo viên → ghi danh học sinh. Học sinh
 có thể khai trong `students`, hoặc trỏ `studentsCsv` tới file CSV hai cột `mshs,full_name`
