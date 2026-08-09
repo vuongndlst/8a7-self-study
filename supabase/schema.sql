@@ -200,6 +200,28 @@ returns boolean language sql stable security definer set search_path = public as
   );
 $$;
 
+-- Giáo viên đang đăng nhập có phụ trách MSHS này không?
+-- Phải là security definer: policy của students tra bảng enrollments, mà policy của
+-- enrollments lại tra ngược students → Postgres báo 42P17 infinite recursion.
+-- Hàm definer bỏ qua RLS bên trong nên cắt được vòng lặp.
+create or replace function public.teaches_mshs(p_mshs text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1
+    from public.enrollments e
+    join public.classes c         on c.id = e.class_id
+    join public.school_years y    on y.id = c.school_year_id and y.is_active
+    join public.class_teachers ct on ct.class_id = c.id
+    where e.mshs = p_mshs and e.is_active and ct.teacher_id = auth.uid()
+  );
+$$;
+
+-- MSHS của học sinh đang đăng nhập (cũng để cắt vòng lặp policy).
+create or replace function public.my_mshs()
+returns text language sql stable security definer set search_path = public as $$
+  select mshs from public.students where claimed_user_id = auth.uid() limit 1;
+$$;
+
 -- Lớp của học sinh trong năm đang hoạt động.
 create or replace function public.student_active_class(p_user uuid)
 returns uuid language sql stable security definer set search_path = public as $$
@@ -212,10 +234,10 @@ returns uuid language sql stable security definer set search_path = public as $$
   limit 1;
 $$;
 
-revoke all on function public.is_teacher(), public.teaches_class(uuid),
-                      public.teaches_user(uuid), public.student_active_class(uuid) from public;
-grant execute on function public.is_teacher(), public.teaches_class(uuid),
-                          public.teaches_user(uuid), public.student_active_class(uuid) to authenticated;
+revoke all on function public.is_teacher(), public.teaches_class(uuid), public.teaches_user(uuid),
+                      public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid) from public;
+grant execute on function public.is_teacher(), public.teaches_class(uuid), public.teaches_user(uuid),
+                          public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid) to authenticated;
 
 -- Khi TẠO kế hoạch: lớp do server gán, và trạng thái duyệt thiết bị luôn bắt đầu
 -- ở 'Chờ duyệt' — học sinh không thể tự khai là đã được duyệt.
@@ -370,8 +392,10 @@ create policy class_teachers_read on public.class_teachers
 for select to authenticated using (teacher_id = auth.uid());
 
 -- Danh sách lớp: học sinh KHÔNG đọc được của bạn khác; GV chỉ đọc lớp mình phụ trách.
+-- Lọc theo GHI DANH chứ không theo claimed_user_id — nếu không, em nào chưa tạo
+-- tài khoản sẽ biến mất khỏi danh sách lớp của giáo viên.
 create policy students_teacher_read on public.students
-for select to authenticated using (public.teaches_user(claimed_user_id));
+for select to authenticated using (public.teaches_mshs(mshs));
 
 -- Học sinh đọc đúng dòng của chính mình — để biết mình đang học lớp nào.
 create policy students_self_read on public.students
@@ -381,8 +405,7 @@ create policy enrollments_teacher_read on public.enrollments
 for select to authenticated using (public.teaches_class(class_id));
 
 create policy enrollments_student_read on public.enrollments
-for select to authenticated
-using (exists (select 1 from public.students s where s.mshs = enrollments.mshs and s.claimed_user_id = auth.uid()));
+for select to authenticated using (mshs = public.my_mshs());
 
 -- Hồ sơ: HS đọc của mình; GV đọc HS lớp mình + chính mình.
 create policy profiles_read on public.profiles

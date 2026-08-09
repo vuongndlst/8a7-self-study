@@ -1,7 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import {
-  corsHeaders, json, validStudentPassword, PASSWORD_RULE_MESSAGE, sendEmail, emailLayout,
-} from '../_shared/common.ts'
+import { corsHeaders, json, validStudentPassword, PASSWORD_RULE_MESSAGE } from '../_shared/common.ts'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -61,16 +59,7 @@ Deno.serve(async (req) => {
       .update({ must_change_password: true }).eq('id', studentId)
     if (flagError) throw flagError
 
-    const { data: u } = await admin.auth.admin.getUserById(studentId)
-    if (u?.user?.email) {
-      await sendEmail(u.user.email, 'Mật khẩu Self-Study của em vừa được đặt lại', emailLayout(
-        `Chào ${student.full_name}`,
-        `<p style="margin:0 0 10px">Giáo viên <strong>${teacher.full_name}</strong> vừa đặt lại mật khẩu tài khoản giờ tự học của em.</p>
-         <p style="margin:0 0 10px">Mật khẩu tạm được giáo viên đưa trực tiếp. Ngay khi đăng nhập, hệ thống sẽ yêu cầu em <strong>đặt mật khẩu riêng</strong>.</p>
-         <p style="margin:10px 0 0;font-size:13px;color:#6b7c74">Nếu em không yêu cầu việc này, hãy báo lại giáo viên.</p>`,
-      ))
-    }
-
+    // Mật khẩu tạm được giáo viên đưa trực tiếp cho học sinh — hệ thống không gửi email.
     return json({ ok: true })
   } catch (error) {
     console.error(error)

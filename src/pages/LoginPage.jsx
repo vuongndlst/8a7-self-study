@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { GraduationCap, KeyRound, MailCheck, ShieldCheck } from 'lucide-react'
-import { supabase, studentEmail, recoveryRedirectTo, STUDENT_EMAIL_DOMAIN } from '../lib/supabase'
+import { GraduationCap, KeyRound, ShieldCheck } from 'lucide-react'
+import { supabase, studentEmail, STUDENT_EMAIL_DOMAIN } from '../lib/supabase'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -34,19 +34,6 @@ export default function LoginPage() {
     const { data: p } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
     if (p?.role !== 'teacher') { await supabase.auth.signOut(); return setError('Tài khoản này không có quyền giáo viên.') }
     navigate('/teacher')
-  }
-
-  const forgotPassword = async () => {
-    setError(''); setNotice('')
-    const mshs = student.mshs.trim()
-    if (!/^\d{7}$/.test(mshs)) return setError('Nhập MSHS của em rồi bấm lại "Quên mật khẩu".')
-    setBusy(true)
-    const { error: err } = await supabase.auth.resetPasswordForEmail(studentEmail(mshs), {
-      redirectTo: recoveryRedirectTo(),
-    })
-    setBusy(false)
-    if (err) return setError('Chưa gửi được email khôi phục. Hãy liên hệ giáo viên để đặt lại mật khẩu.')
-    setNotice(`Đã gửi link đặt lại mật khẩu tới ${mshs}@${STUDENT_EMAIL_DOMAIN}. Hãy mở hộp thư của trường.`)
   }
 
   return <div className="page auth-page auth-wide login-layout">
@@ -84,11 +71,11 @@ export default function LoginPage() {
                onChange={(e) => setStudent({ ...student, password: e.target.value })}
                autoComplete="current-password" required />
         {error && <div className="form-error">{error}</div>}
-        {notice && <div className="notice"><MailCheck size={17} /><span>{notice}</span></div>}
+        {notice && <div className="notice"><span>{notice}</span></div>}
         <button className="button primary full large" disabled={busy}><KeyRound size={18} />{busy ? 'Đang đăng nhập…' : 'Đăng nhập học sinh'}</button>
         <p className="auth-switch">
           Chưa có tài khoản? <Link to="/register">Đăng ký lần đầu</Link><br />
-          <button type="button" className="link-button" onClick={forgotPassword} disabled={busy}>Quên mật khẩu — gửi link vào email trường</button>
+          <span>Quên mật khẩu? Báo giáo viên chủ nhiệm để nhận mật khẩu tạm, rồi em tự đặt lại.</span>
         </p>
       </form> : <form onSubmit={loginTeacher}>
         <label>Email giáo viên</label>

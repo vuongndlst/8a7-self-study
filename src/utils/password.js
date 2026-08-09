@@ -17,3 +17,26 @@ export function validateStudentPassword(password, mshs) {
   const checks = passwordChecks(password, mshs)
   return { ok: checks.every((item) => item.ok), checks }
 }
+
+// Mật khẩu tạm cho giáo viên phát lại. Bỏ các ký tự dễ đọc nhầm khi chép tay
+// (0/O, 1/l/I) vì thầy cô thường viết ra giấy đưa cho học sinh.
+const UPPER = 'ABCDEFGHJKMNPQRSTUVWXYZ'
+const LOWER = 'abcdefghijkmnpqrstuvwxyz'
+const DIGIT = '23456789'
+
+export function generateTempPassword(mshs = '') {
+  const pool = UPPER + LOWER + DIGIT
+  const pick = (set) => set[Math.floor(Math.random() * set.length)]
+  for (let attempt = 0; attempt < 20; attempt++) {
+    // Bảo đảm có đủ hoa + thường + số, rồi bù cho đủ 12 ký tự.
+    const chars = [pick(UPPER), pick(LOWER), pick(DIGIT)]
+    while (chars.length < 12) chars.push(pick(pool))
+    for (let i = chars.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[chars[i], chars[j]] = [chars[j], chars[i]]
+    }
+    const value = chars.join('')
+    if (validateStudentPassword(value, mshs).ok) return value
+  }
+  return `Tu${Date.now().toString().slice(-6)}Hoc`
+}

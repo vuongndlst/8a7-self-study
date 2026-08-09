@@ -50,8 +50,16 @@ nào. Chỉ Edge Function mới hạ được cờ — học sinh không tự s�
 
 ### Quên mật khẩu
 
-Học sinh nhập MSHS rồi bấm *“Quên mật khẩu”* ở trang đăng nhập → Supabase gửi link vào
-email trường. Cần cấu hình SMTP ở mục 6.
+Học sinh báo giáo viên. Trên dashboard, tab **Theo học sinh** liệt kê **toàn bộ** học
+sinh của lớp (kể cả em chưa tạo tài khoản) — tick chọn một hoặc nhiều em rồi bấm **Đặt
+lại mật khẩu**. Hệ thống sinh mật khẩu tạm cho từng em và hiện ra một lần duy nhất, kèm
+nút chép cả danh sách. Giáo viên đưa trực tiếp cho học sinh.
+
+Mật khẩu tạm bỏ các ký tự dễ đọc nhầm khi chép tay (`0/O`, `1/l/I`).
+
+> Hệ thống **không gửi email**: domain trường nằm trên Microsoft 365, tài khoản giáo viên
+> không có quyền quản trị Entra ID để tạo app `Mail.Send`, và cũng không bật được SMTP
+> AUTH. Mọi nhắc nhở vì thế hiển thị thẳng trong ứng dụng thay vì gửi thư.
 
 ## 3. Cài đặt và chạy
 
@@ -113,56 +121,17 @@ xuất từ Excel.
 
 File `admin/*.json` và `admin/*.csv` đã gitignore vì chứa tên học sinh.
 
-## 6. Email (tùy chọn nhưng nên có)
+## 6. Nhắc quá hạn — hiển thị trong ứng dụng
 
-Domain trường nằm trên **Microsoft 365**. Đặt secret cho Supabase project — Dashboard →
-Edge Functions → Secrets — theo **một** trong ba cách:
+Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên màn hình:
 
-```env
-# 1. Microsoft Graph (khuyến nghị: nhiều tenant M365 đã tắt SMTP AUTH)
-MS_TENANT_ID=…
-MS_CLIENT_ID=…
-MS_CLIENT_SECRET=…
-EMAIL_FROM=selfstudy@lsts.edu.vn
+- **Giáo viên** — thẻ *“Cần chú ý”* trên dashboard: bao nhiêu em chưa lập kế hoạch cho
+  ngày mai (kèm tên), bao nhiêu em còn tiết chưa cập nhật kết quả, bao nhiêu em đang chờ
+  tự đặt lại mật khẩu.
+- **Học sinh** — banner cảnh báo số tiết đã qua mà chưa cập nhật kết quả, và báo khi
+  giáo viên có nhận xét mới.
 
-# 2. SMTP Exchange Online (cần quản trị bật SMTP AUTH cho hộp thư gửi)
-SMTP_HOST=smtp.office365.com
-SMTP_PORT=587
-SMTP_USER=selfstudy@lsts.edu.vn
-SMTP_PASS=…
-EMAIL_FROM=selfstudy@lsts.edu.vn
-
-# 3. Resend
-RESEND_API_KEY=…
-EMAIL_FROM=…
-```
-
-Với Graph: App registration + quyền **ứng dụng** `Mail.Send`, đã admin-consent.
-
-Chưa đặt gì thì mọi lời gọi gửi mail tự bỏ qua, các chức năng khác vẫn chạy bình thường.
-
-Riêng **“quên mật khẩu”** dùng bộ gửi mail của Supabase Auth, chỉ hỗ trợ SMTP — cấu hình
-ở Authentication → Emails → SMTP Settings với thông số Exchange Online ở trên. SMTP mặc
-định của Supabase giới hạn 2 email/giờ, chỉ đủ để thử.
-
-Thêm secret `APP_URL=https://vuongndlst.github.io/8a7-self-study/` để email có nút bấm.
-
-## 7. Nhắc quá hạn hằng ngày
-
-`.github/workflows/daily-reminders.yml` chạy 17:00 giờ Việt Nam các ngày trong tuần, gọi
-Edge Function `daily-reminders`. Function gửi:
-
-- email nhắc **từng học sinh** chưa đăng ký kế hoạch cho ngày mai, hoặc còn tiết đã qua
-  mà chưa cập nhật kết quả;
-- một email **tổng hợp cho giáo viên** từng lớp.
-
-Cần đặt secret cho repo (Settings → Secrets → Actions): `SUPABASE_URL`, `CRON_SECRET`;
-và đặt `CRON_SECRET` giống hệt trong Supabase Edge Functions Secrets.
-
-Chạy thử không gửi mail: Actions → *Nhắc giờ tự học hằng ngày* → Run workflow (giữ
-`dryRun` = true).
-
-## 8. Deploy Edge Functions
+## 7. Deploy Edge Functions
 
 ```bash
 npx supabase login
@@ -170,7 +139,6 @@ npx supabase link --project-ref qzvlwffxvewhfztnxxzb
 npx supabase functions deploy register-student --no-verify-jwt
 npx supabase functions deploy teacher-reset-password --no-verify-jwt
 npx supabase functions deploy student-change-password --no-verify-jwt
-npx supabase functions deploy daily-reminders --no-verify-jwt
 ```
 
 `verify_jwt = false` là chủ ý — mỗi function tự kiểm quyền bên trong:
@@ -180,9 +148,8 @@ npx supabase functions deploy daily-reminders --no-verify-jwt
 | `register-student` | công khai | khớp ghi danh năm hiện hành + MSHS chưa claim |
 | `teacher-reset-password` | giáo viên | đọc Bearer token, phải là teacher **và** phụ trách lớp của HS đó |
 | `student-change-password` | học sinh | phải là student, đúng mật khẩu hiện tại, đủ luật mật khẩu |
-| `daily-reminders` | cron | header `x-cron-secret` |
 
-## 9. Quyền dữ liệu
+## 8. Quyền dữ liệu
 
 **Học sinh** — chỉ đọc/ghi dữ liệu của chính mình; không đọc danh sách lớp; chỉ tạo kế
 hoạch cho hôm nay trở đi; chỉ sửa/xóa kế hoạch còn ở tương lai; chỉ nộp phản tư và minh
@@ -198,7 +165,11 @@ Ranh giới được giữ bằng ba lớp: RLS theo dòng, grant theo bảng, v
 (`plans_guard_columns`, `reflections_guard_columns`) — vì RLS chặn được dòng nhưng không
 chặn được cột.
 
-## 10. Cấu trúc
+> Các policy tra chéo giữa `students` và `enrollments` phải gọi qua hàm `security definer`
+> (`teaches_mshs`, `my_mshs`). Viết thẳng `exists (select … from enrollments)` trong policy
+> của `students` sẽ khiến Postgres báo `42P17 infinite recursion`.
+
+## 9. Cấu trúc
 
 ```text
 src/
@@ -209,13 +180,11 @@ src/
   utils/        date.js · password.js
 supabase/
   schema.sql
-  seed-roster.private.sql        # private, gitignored
   functions/
-    _shared/common.ts            # CORS, luật mật khẩu, gửi email
+    _shared/common.ts            # CORS, luật mật khẩu
     register-student/
     teacher-reset-password/
     student-change-password/
-    daily-reminders/
 scripts/
   create-teacher.mjs             # tạo 1 giáo viên từ .env.admin
   setup-class.mjs                # năm học + lớp + giáo viên + ghi danh
@@ -223,5 +192,4 @@ admin/
   class.example.json             # mẫu; file thật đã gitignore
 .github/workflows/
   deploy-pages.yml
-  daily-reminders.yml
 ```

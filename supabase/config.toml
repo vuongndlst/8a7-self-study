@@ -6,7 +6,3 @@ verify_jwt = false
 
 [functions.student-change-password]
 verify_jwt = false
-
-# Bảo vệ bằng header x-cron-secret chứ không phải JWT.
-[functions.daily-reminders]
-verify_jwt = false

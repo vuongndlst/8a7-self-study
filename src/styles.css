@@ -47,3 +47,21 @@
 .device-cell{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .device-actions{display:inline-flex;gap:4px}
 .row-actions{display:inline-flex;gap:4px}
+
+/* ---------- Quản lý tài khoản: chọn nhiều + phát mật khẩu tạm ---------- */
+.bulk-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 18px;margin-bottom:14px}
+.bulk-bar strong{font-size:17px;color:var(--green)}
+th.pick,td.pick{width:38px;text-align:center}
+th.pick input,td.pick input{width:16px;height:16px;accent-color:var(--green);cursor:pointer}
+td.pick input:disabled{cursor:default;opacity:.3}
+tr.picked{background:var(--mint)}
+.input-with-action{display:flex;gap:8px;align-items:center}
+.input-with-action input{flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em}
+.input-with-action .button{white-space:nowrap;padding:10px 14px}
+.target-list{margin:6px 0 14px;padding-left:18px;max-height:190px;overflow:auto;color:var(--ink)}
+.target-list li{margin:3px 0}
+.target-list small{color:var(--muted);margin-left:6px}
+.result-table{max-height:320px;overflow:auto;margin:6px 0 14px}
+.result-table code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;font-weight:600;color:var(--green);background:var(--mint);padding:3px 8px;border-radius:6px;user-select:all}
+.button.full{width:100%;justify-content:center;margin-top:12px}
+.muted-text.small{font-size:12.5px;line-height:1.5;margin-top:8px}

@@ -12,10 +12,6 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 export const STUDENT_EMAIL_DOMAIN = import.meta.env.VITE_STUDENT_EMAIL_DOMAIN || 'lsts.edu.vn'
 export const studentEmail = (mshs) => `${String(mshs).trim()}@${STUDENT_EMAIL_DOMAIN}`
 
-// Link trong email khôi phục quay về gốc site; AuthContext bắt sự kiện PASSWORD_RECOVERY.
-export const recoveryRedirectTo = () =>
-  `${window.location.origin}${window.location.pathname}`
-
 export async function callFunction(name, body) {
   const { data: { session } } = await supabase.auth.getSession()
   const res = await fetch(`${supabaseUrl}/functions/v1/${name}`, {

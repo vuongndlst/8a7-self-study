@@ -1,7 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
-  corsHeaders, json, studentEmail, validStudentPassword, PASSWORD_RULE_MESSAGE,
-  normalizeName, sendEmail, emailLayout,
+  corsHeaders, json, studentEmail, validStudentPassword, PASSWORD_RULE_MESSAGE, normalizeName,
 } from '../_shared/common.ts'
 
 Deno.serve(async (req) => {
@@ -81,38 +80,7 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: 'MSHS vừa được đăng ký ở một phiên khác. Hãy thử đăng nhập.' }, 409)
     }
 
-    // Thông báo — không chặn luồng đăng ký nếu gửi mail lỗi.
-    const className = (row as any).classes?.name ?? ''
-    const appUrl = Deno.env.get('APP_URL') ?? ''
-    await sendEmail(email, 'Tài khoản Self-Study của em đã sẵn sàng', emailLayout(
-      `Chào ${student.full_name}`,
-      `<p style="margin:0 0 10px">Tài khoản giờ tự học của em đã được tạo cho lớp <strong>${className}</strong>.</p>
-       <p style="margin:0 0 10px">Đăng nhập bằng <strong>MSHS ${cleanMshs}</strong> và mật khẩu em vừa đặt.</p>
-       ${appUrl ? `<p style="margin:16px 0"><a href="${appUrl}" style="background:#12372A;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block">Mở trang tự học</a></p>` : ''}
-       <p style="margin:10px 0 0;font-size:13px;color:#6b7c74">Nếu em không thực hiện việc này, hãy báo ngay cho giáo viên chủ nhiệm.</p>`,
-    ))
-
-    // Báo cho giáo viên phụ trách lớp.
-    const { data: teachers } = await admin
-      .from('class_teachers')
-      .select('profiles!inner(id)')
-      .eq('class_id', row.class_id)
-    const teacherIds = (teachers ?? []).map((t: any) => t.profiles.id)
-    if (teacherIds.length) {
-      const emails: string[] = []
-      for (const id of teacherIds) {
-        const { data: u } = await admin.auth.admin.getUserById(id)
-        if (u?.user?.email) emails.push(u.user.email)
-      }
-      if (emails.length) {
-        await sendEmail(emails, `[${className}] ${student.full_name} vừa tạo tài khoản`, emailLayout(
-          'Có học sinh vừa đăng ký',
-          `<p style="margin:0 0 6px"><strong>${student.full_name}</strong> — MSHS ${cleanMshs}</p>
-           <p style="margin:0;color:#6b7c74">Lớp ${className} · ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>`,
-        ))
-      }
-    }
-
+    // Giáo viên thấy học sinh mới đăng ký ngay trên dashboard (thẻ "Tài khoản học sinh").
     return json({ ok: true })
   } catch (error) {
     console.error(error)
