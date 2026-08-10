@@ -1,4 +1,4 @@
-# Self-Study — quản lý giờ tự học
+﻿# Self-Study — quản lý giờ tự học
 
 Web quản lý giờ tự học theo quy trình **Plan → Do → Reflect**.
 
@@ -28,7 +28,7 @@ thấy dữ liệu của nhau.
 ## 2. Tài khoản học sinh
 
 MSHS chính là phần trước `@` trong email trường: `2406002` → `2406002@lsts.edu.vn`.
-Nhờ vậy Supabase gửi được email thật (khôi phục mật khẩu, thông báo, nhắc quá hạn).
+Học sinh đăng nhập bằng MSHS; hệ thống tự ghép thành email này.
 
 ### Luật mật khẩu
 
@@ -86,8 +86,9 @@ các file `VITE_*`.
 
 Supabase Dashboard → SQL Editor → chạy toàn bộ `supabase/schema.sql`.
 
-> File có khối `drop table` để nâng cấp từ v1. Nếu đã có dữ liệu thật của học sinh,
-> **đừng chạy khối đó** — hãy viết migration chuyển dữ liệu sang cấu trúc mới.
+> File **chạy lại nhiều lần được và không xóa dữ liệu**: chỉ `create … if not exists`,
+> `alter … add column if not exists`, `create or replace function`, và dựng lại policy.
+> Nâng cấp hệ thống đang chạy thật chỉ cần chạy lại file này.
 
 Sau đó bật password policy: Authentication → Sign In / Providers → Password Requirements
 → tối thiểu **10** ký tự, yêu cầu **chữ thường + chữ hoa + chữ số**.
@@ -121,7 +122,54 @@ xuất từ Excel.
 
 File `admin/*.json` và `admin/*.csv` đã gitignore vì chứa tên học sinh.
 
-## 6. Nhắc quá hạn — hiển thị trong ứng dụng
+## 6. Đánh giá, chat và trợ giảng
+
+### Chấm sao và phản hồi
+
+Giáo viên bấm vào tên môn trong bảng kế hoạch (hoặc vào tên học sinh → chọn một tiết)
+để mở **chi tiết tiết tự học**: kế hoạch, tự đánh giá của em, minh chứng đã nộp. Ở đó
+chấm **1–5 sao** và viết nhận xét gửi lại học sinh.
+
+**Chấm 1–2 sao là mức cảnh báo.** Thẻ của em hiện viền đỏ (1 sao) hoặc vàng (2 sao),
+kèm thông báo, một banner đếm tổng số tiết bị đánh giá thấp, và **bắt em viết một dòng**
+cho biết sẽ điều chỉnh thế nào. Chấm lại lên ≥ 3 sao thì phần phản hồi cũ tự xóa.
+
+### Chat
+
+Mỗi học sinh có **một luồng** trong lớp. Giáo viên và trợ giảng (nếu được bật quyền chat)
+cùng đọc và trả lời trong luồng đó; học sinh không thấy luồng của bạn. Tin đã gửi không
+sửa/xóa được.
+
+### Trợ giảng (TA)
+
+Trợ giảng **vẫn là học sinh** — giữ nguyên tài khoản, dữ liệu cá nhân vẫn riêng tư. Giáo
+viên vào tab **Trợ giảng** để cử và tick từng quyền:
+
+| Quyền | Mặc định |
+|---|---|
+| Xem kế hoạch lớp | ✅ |
+| Xem yêu cầu hỗ trợ | ✅ |
+| Nhắn tin với bạn | ✅ |
+| Xem phản tư đầy đủ | ❌ |
+| Xem minh chứng | ❌ |
+| Chấm sao 1–5 | ❌ |
+| Viết nhận xét | ❌ |
+| Duyệt đăng ký thiết bị | ❌ |
+
+Mặc định đóng các quyền nhạy cảm vì **TA là bạn cùng lớp**: phản tư và ghi chú riêng
+được học sinh viết ra với giả định chỉ giáo viên đọc.
+
+TA chỉ có `view_help` vẫn thấy được danh sách cần hỗ trợ, qua view `public.help_requests` —
+view chỉ lộ nội dung yêu cầu hỗ trợ, **không** lộ ghi chú phản tư, nhận xét hay điểm sao.
+Cần view riêng vì RLS chặn được dòng nhưng không chặn được cột.
+
+TA **không bao giờ**: đặt lại mật khẩu, sửa/xóa kế hoạch của bạn, cử TA khác, xem quyền
+của TA khác, hay thấy dữ liệu lớp khác. Mọi lượt chấm sao / nhận xét đều ghi rõ người thực hiện
+(`rating_by`, `teacher_comment_by`).
+
+Dashboard riêng của TA ở `#/ta`, chỉ hiện khi em được cử.
+
+## 7. Nhắc quá hạn — hiển thị trong ứng dụng
 
 Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên màn hình:
 
@@ -131,7 +179,7 @@ Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên
 - **Học sinh** — banner cảnh báo số tiết đã qua mà chưa cập nhật kết quả, và báo khi
   giáo viên có nhận xét mới.
 
-## 7. Deploy Edge Functions
+## 8. Deploy Edge Functions
 
 ```bash
 npx supabase login
@@ -149,7 +197,7 @@ npx supabase functions deploy student-change-password --no-verify-jwt
 | `teacher-reset-password` | giáo viên | đọc Bearer token, phải là teacher **và** phụ trách lớp của HS đó |
 | `student-change-password` | học sinh | phải là student, đúng mật khẩu hiện tại, đủ luật mật khẩu |
 
-## 8. Quyền dữ liệu
+## 9. Quyền dữ liệu
 
 **Học sinh** — chỉ đọc/ghi dữ liệu của chính mình; không đọc danh sách lớp; chỉ tạo kế
 hoạch cho hôm nay trở đi; chỉ sửa/xóa kế hoạch còn ở tương lai; chỉ nộp phản tư và minh
@@ -169,7 +217,7 @@ chặn được cột.
 > (`teaches_mshs`, `my_mshs`). Viết thẳng `exists (select … from enrollments)` trong policy
 > của `students` sẽ khiến Postgres báo `42P17 infinite recursion`.
 
-## 9. Cấu trúc
+## 10. Cấu trúc
 
 ```text
 src/

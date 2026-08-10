@@ -1,39 +1,21 @@
 -- ============================================================
--- SELF-STUDY — SUPABASE SCHEMA v2 (đa năm học, đa lớp)
--- Chạy toàn bộ file này trong Supabase SQL Editor.
+-- SELF-STUDY — SUPABASE SCHEMA v3
+-- Chạy toàn bộ file này trong Supabase SQL Editor. CHẠY LẠI NHIỀU LẦN ĐƯỢC:
+-- file chỉ tạo thêm và cập nhật, không xóa bảng nào, không mất dữ liệu.
 --
 -- Mô hình: một học sinh giữ MỘT tài khoản suốt các năm.
---   students     : hồ sơ theo em (MSHS + họ tên), tồn tại qua nhiều năm
---   school_years : 2026-2027, 2027-2028…  (chỉ một năm is_active)
---   classes      : 8A7 của năm nào
---   enrollments  : em nào học lớp nào  → lên lớp = thêm dòng mới, giữ nguyên lịch sử
+--   students      : hồ sơ theo em (MSHS + họ tên), tồn tại qua nhiều năm
+--   school_years  : 2026-2027, 2027-2028…  (chỉ một năm is_active)
+--   classes       : 8A7 của năm nào
+--   enrollments   : em nào học lớp nào → lên lớp = thêm dòng mới, giữ nguyên lịch sử
 --   class_teachers: giáo viên phụ trách lớp nào → GV chỉ thấy lớp của mình
+--   class_assistants: học sinh được cử làm trợ giảng, kèm bảng tick quyền
+--
+-- v3 thêm: chấm sao + nhận xét cho từng tiết, chat theo luồng của mỗi học sinh,
+--          thông báo trong ứng dụng, và vai trò trợ giảng (TA).
 -- ============================================================
 
 create extension if not exists pgcrypto;
-
--- ---------- Nâng cấp từ v1 ----------
--- v2 đổi cấu trúc bảng (plans thêm class_id NOT NULL, roster tách thành
--- students + enrollments) nên phải dựng lại các bảng dữ liệu tự học.
---
--- MẤT GÌ: toàn bộ plans / reflections / evidence / danh sách lớp, và dòng
---         trong profiles.
--- KHÔNG MẤT: tài khoản đăng nhập trong auth.users (không đụng tới), file
---         trong Storage, và danh sách 31 HS — nạp lại bằng seed-roster.private.sql.
--- SAU KHI CHẠY: chạy lại `npm run create-teacher` rồi seed-roster.private.sql.
---
--- Nếu đã có dữ liệu thật của học sinh, ĐỪNG chạy khối này — hãy viết migration
--- chuyển dữ liệu sang cấu trúc mới thay vì dựng lại.
-drop table if exists public.evidence       cascade;
-drop table if exists public.reflections    cascade;
-drop table if exists public.plans          cascade;
-drop table if exists public.student_roster cascade;
-drop table if exists public.enrollments    cascade;
-drop table if exists public.students       cascade;
-drop table if exists public.class_teachers cascade;
-drop table if exists public.profiles       cascade;
-drop table if exists public.classes        cascade;
-drop table if exists public.school_years   cascade;
 
 -- ---------- Khung năm học / lớp ----------
 create table if not exists public.school_years (
@@ -74,6 +56,27 @@ create table if not exists public.class_teachers (
   teacher_id uuid not null references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now(),
   primary key (class_id, teacher_id)
+);
+
+-- ---------- Trợ giảng (TA) ----------
+-- TA vẫn là học sinh: profiles.role giữ nguyên 'student', dữ liệu cá nhân của em
+-- vẫn riêng tư. Chỉ thêm dòng ở đây kèm bảng tick quyền do giáo viên bật/tắt.
+-- Mặc định đóng các quyền nhạy cảm: TA là bạn cùng lớp, phản tư và ghi chú
+-- riêng của học sinh viết ra với giả định chỉ giáo viên đọc.
+create table if not exists public.class_assistants (
+  class_id uuid not null references public.classes(id) on delete cascade,
+  student_id uuid not null references public.profiles(id) on delete cascade,
+  can_view_plans       boolean not null default true,   -- kế hoạch: môn, nhiệm vụ, đúng hạn
+  can_view_help        boolean not null default true,   -- danh sách "em cần hỗ trợ"
+  can_chat             boolean not null default true,   -- nhắn tin với bạn trong lớp
+  can_view_reflections boolean not null default false,  -- nội dung phản tư đầy đủ
+  can_view_evidence    boolean not null default false,  -- file minh chứng
+  can_rate             boolean not null default false,  -- chấm sao 1–5
+  can_comment          boolean not null default false,  -- viết nhận xét
+  can_review_device    boolean not null default false,  -- duyệt đăng ký thiết bị
+  granted_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (class_id, student_id)
 );
 
 -- ---------- Học sinh & ghi danh ----------
@@ -128,7 +131,7 @@ create table if not exists public.reflections (
   note text check (note is null or char_length(note) <= 1000),
   need_help boolean not null default false,
   help_note text check (help_note is null or char_length(help_note) <= 500),
-  -- Phản hồi của giáo viên
+  -- Phản hồi của giáo viên / trợ giảng
   teacher_comment text check (teacher_comment is null or char_length(teacher_comment) <= 1000),
   teacher_comment_by uuid references public.profiles(id) on delete set null,
   teacher_comment_at timestamptz,
@@ -137,6 +140,21 @@ create table if not exists public.reflections (
   updated_at timestamptz not null default now(),
   constraint help_note_required check (not need_help or nullif(trim(help_note),'') is not null)
 );
+
+-- v3: chấm sao 1–5 và phần học sinh phải phản hồi khi bị đánh giá thấp.
+alter table public.reflections add column if not exists rating smallint;
+alter table public.reflections add column if not exists rating_by uuid references public.profiles(id) on delete set null;
+alter table public.reflections add column if not exists rating_at timestamptz;
+alter table public.reflections add column if not exists student_ack_note text;
+alter table public.reflections add column if not exists student_ack_at timestamptz;
+
+do $$ begin
+  alter table public.reflections add constraint rating_range check (rating is null or rating between 1 and 5);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.reflections add constraint ack_note_length check (student_ack_note is null or char_length(student_ack_note) <= 500);
+exception when duplicate_object then null; end $$;
 
 create table if not exists public.evidence (
   id uuid primary key default gen_random_uuid(),
@@ -152,6 +170,51 @@ create table if not exists public.evidence (
     or (kind = 'link' and external_url is not null and storage_path is null)
   )
 );
+
+-- ---------- Chat ----------
+-- Mỗi học sinh có ĐÚNG MỘT luồng trong lớp. Giáo viên và trợ giảng (nếu được bật
+-- quyền chat) cùng đọc và trả lời trong luồng đó; học sinh không thấy luồng của bạn.
+create table if not exists public.conversations (
+  id uuid primary key default gen_random_uuid(),
+  class_id uuid not null references public.classes(id) on delete cascade,
+  student_id uuid not null references public.profiles(id) on delete cascade,
+  last_message_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (class_id, student_id)
+);
+
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  sender_id uuid not null references public.profiles(id) on delete cascade,
+  body text not null check (char_length(trim(body)) between 1 and 2000),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists messages_conversation_idx on public.messages (conversation_id, created_at desc);
+
+-- Mốc đã đọc của từng người trong từng luồng — dùng để đếm tin chưa đọc.
+create table if not exists public.conversation_reads (
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  last_read_at timestamptz not null default now(),
+  primary key (conversation_id, user_id)
+);
+
+-- ---------- Thông báo trong ứng dụng ----------
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  kind text not null check (kind in ('rating','comment','message','device','system')),
+  title text not null,
+  body text,
+  plan_id uuid references public.plans(id) on delete cascade,
+  conversation_id uuid references public.conversations(id) on delete cascade,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists notifications_user_idx on public.notifications (user_id, created_at desc);
 
 -- ---------- Hàm tiện ích ----------
 create or replace function public.vn_today()
@@ -222,6 +285,68 @@ returns text language sql stable security definer set search_path = public as $$
   select mshs from public.students where claimed_user_id = auth.uid() limit 1;
 $$;
 
+-- ---------- Phân quyền nhân sự lớp (giáo viên + trợ giảng) ----------
+-- Một chỗ duy nhất quyết định "ai được làm gì với lớp nào".
+-- Giáo viên phụ trách lớp: được tất cả. Trợ giảng: theo đúng ô đã tick.
+create or replace function public.staff_perm(p_class uuid, p_perm text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select case
+    when exists (select 1 from public.class_teachers
+                 where class_id = p_class and teacher_id = auth.uid()) then true
+    else coalesce((
+      select case p_perm
+        when 'view_plans'       then can_view_plans
+        when 'view_help'        then can_view_help
+        when 'chat'             then can_chat
+        when 'view_reflections' then can_view_reflections
+        when 'view_evidence'    then can_view_evidence
+        when 'rate'             then can_rate
+        when 'comment'          then can_comment
+        when 'review_device'    then can_review_device
+        else false
+      end
+      from public.class_assistants
+      where class_id = p_class and student_id = auth.uid()
+    ), false)
+  end;
+$$;
+
+-- Người đang đăng nhập có quyền p_perm với học sinh này (qua lớp em đang học) không?
+create or replace function public.staff_sees_student(p_student uuid, p_perm text)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1
+    from public.students s
+    join public.enrollments e  on e.mshs = s.mshs and e.is_active
+    join public.classes c      on c.id = e.class_id
+    join public.school_years y on y.id = c.school_year_id and y.is_active
+    where s.claimed_user_id = p_student and public.staff_perm(c.id, p_perm)
+  );
+$$;
+
+-- p_user có phải giáo viên / trợ giảng của LỚP MÌNH không?
+-- Cần cho chat: nếu không, học sinh không đọc được tên người đang nhắn với mình.
+create or replace function public.shares_class_staff(p_user uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1
+    from public.enrollments e
+    join public.classes c      on c.id = e.class_id
+    join public.school_years y on y.id = c.school_year_id and y.is_active
+    where e.mshs = public.my_mshs() and e.is_active
+      and (
+        exists (select 1 from public.class_teachers ct where ct.class_id = c.id and ct.teacher_id = p_user)
+        or exists (select 1 from public.class_assistants ca where ca.class_id = c.id and ca.student_id = p_user)
+      )
+  );
+$$;
+
+-- Người đang đăng nhập có phải trợ giảng của lớp nào đó không (để hiện menu TA).
+create or replace function public.is_assistant()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.class_assistants where student_id = auth.uid());
+$$;
+
 -- Lớp của học sinh trong năm đang hoạt động.
 create or replace function public.student_active_class(p_user uuid)
 returns uuid language sql stable security definer set search_path = public as $$
@@ -235,9 +360,13 @@ returns uuid language sql stable security definer set search_path = public as $$
 $$;
 
 revoke all on function public.is_teacher(), public.teaches_class(uuid), public.teaches_user(uuid),
-                      public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid) from public;
+                      public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid),
+                      public.staff_perm(uuid, text), public.staff_sees_student(uuid, text),
+                      public.shares_class_staff(uuid), public.is_assistant() from public;
 grant execute on function public.is_teacher(), public.teaches_class(uuid), public.teaches_user(uuid),
-                          public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid) to authenticated;
+                          public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid),
+                          public.staff_perm(uuid, text), public.staff_sees_student(uuid, text),
+                          public.shares_class_staff(uuid), public.is_assistant() to authenticated;
 
 -- Khi TẠO kế hoạch: lớp do server gán, và trạng thái duyệt thiết bị luôn bắt đầu
 -- ở 'Chờ duyệt' — học sinh không thể tự khai là đã được duyệt.
@@ -301,8 +430,8 @@ begin
       new.device_reviewed_at := null;
       new.device_review_note := null;
     end if;
-  elsif public.is_teacher() then
-    -- Giáo viên: CHỈ được duyệt thiết bị, không sửa nội dung kế hoạch của HS.
+  else
+    -- Nhân sự lớp: CHỈ được duyệt thiết bị, không sửa nội dung kế hoạch của HS.
     new.student_id        := old.student_id;
     new.class_id          := old.class_id;
     new.study_date        := old.study_date;
@@ -316,8 +445,15 @@ begin
     new.device_purpose    := old.device_purpose;
     new.fallback_activity := old.fallback_activity;
     if new.device_status is distinct from old.device_status then
-      new.device_reviewed_by := auth.uid();
-      new.device_reviewed_at := now();
+      if public.staff_perm(old.class_id, 'review_device') then
+        new.device_reviewed_by := auth.uid();
+        new.device_reviewed_at := now();
+      else
+        new.device_status      := old.device_status;
+        new.device_reviewed_by := old.device_reviewed_by;
+        new.device_reviewed_at := old.device_reviewed_at;
+        new.device_review_note := old.device_review_note;
+      end if;
     end if;
   end if;
   return new;
@@ -330,24 +466,71 @@ for each row execute function public.plans_guard_columns();
 
 create or replace function public.reflections_guard_columns()
 returns trigger language plpgsql security definer set search_path = public as $$
+declare v_class uuid;
 begin
+  select class_id into v_class from public.plans where id = new.plan_id;
+
   if auth.uid() = old.student_id then
-    -- Học sinh: không tự viết nhận xét giáo viên, không tự đánh dấu đã xử lý.
+    -- Học sinh: không tự chấm sao, không tự viết nhận xét, không tự đánh dấu đã xử lý.
     new.teacher_comment    := old.teacher_comment;
     new.teacher_comment_by := old.teacher_comment_by;
     new.teacher_comment_at := old.teacher_comment_at;
     new.help_resolved      := old.help_resolved;
-  elsif public.is_teacher() then
-    -- Giáo viên: CHỈ nhận xét và đánh dấu đã xử lý.
+    new.rating             := old.rating;
+    new.rating_by          := old.rating_by;
+    new.rating_at          := old.rating_at;
+    -- Phản hồi khi bị đánh giá thấp: chỉ ghi được khi thực sự có sao 1–2.
+    if new.student_ack_note is distinct from old.student_ack_note then
+      if coalesce(old.rating, 5) > 2 then
+        new.student_ack_note := old.student_ack_note;
+        new.student_ack_at   := old.student_ack_at;
+      else
+        new.student_ack_at := case when nullif(trim(new.student_ack_note), '') is null then null else now() end;
+      end if;
+    end if;
+  else
+    -- Nhân sự lớp: KHÔNG đụng vào phần học sinh tự viết.
     new.student_id        := old.student_id;
     new.completion_status := old.completion_status;
     new.note              := old.note;
     new.need_help         := old.need_help;
     new.help_note         := old.help_note;
     new.completed_at      := old.completed_at;
+    new.student_ack_note  := old.student_ack_note;
+    new.student_ack_at    := old.student_ack_at;
+
+    -- Nhận xét: giáo viên luôn được; trợ giảng phải được bật quyền.
     if new.teacher_comment is distinct from old.teacher_comment then
-      new.teacher_comment_by := auth.uid();
-      new.teacher_comment_at := now();
+      if public.staff_perm(v_class, 'comment') then
+        new.teacher_comment_by := auth.uid();
+        new.teacher_comment_at := now();
+      else
+        new.teacher_comment    := old.teacher_comment;
+        new.teacher_comment_by := old.teacher_comment_by;
+        new.teacher_comment_at := old.teacher_comment_at;
+      end if;
+    end if;
+
+    -- Chấm sao: tương tự.
+    if new.rating is distinct from old.rating then
+      if public.staff_perm(v_class, 'rate') then
+        new.rating_by := auth.uid();
+        new.rating_at := now();
+        -- Chấm lại từ thấp lên cao thì xóa phần phản hồi cũ cho sạch.
+        if coalesce(new.rating, 5) > 2 then
+          new.student_ack_note := null;
+          new.student_ack_at   := null;
+        end if;
+      else
+        new.rating    := old.rating;
+        new.rating_by := old.rating_by;
+        new.rating_at := old.rating_at;
+      end if;
+    end if;
+
+    if new.help_resolved is distinct from old.help_resolved
+       and not public.staff_perm(v_class, 'comment') then
+      new.help_resolved := old.help_resolved;
     end if;
   end if;
   return new;
@@ -358,24 +541,125 @@ drop trigger if exists trg_reflections_guard_columns on public.reflections;
 create trigger trg_reflections_guard_columns before update on public.reflections
 for each row execute function public.reflections_guard_columns();
 
+-- ---------- Thông báo tự sinh ----------
+-- Sinh ở CSDL chứ không ở frontend: không thể bỏ qua, và không thể giả mạo.
+create or replace function public.notify_on_reflection_feedback()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_plan record;
+begin
+  select p.study_date, p.period, p.subject into v_plan from public.plans p where p.id = new.plan_id;
+
+  if new.rating is distinct from old.rating and new.rating is not null then
+    insert into public.notifications (user_id, kind, title, body, plan_id)
+    values (
+      new.student_id, 'rating',
+      'Tiết ' || v_plan.period || ' môn ' || v_plan.subject || ' được chấm ' || new.rating || '/5',
+      case when new.rating <= 2
+        then 'Kết quả chưa đạt yêu cầu. Em hãy mở lại tiết này, đọc nhận xét và viết một dòng cho biết sẽ điều chỉnh thế nào.'
+        else 'Giáo viên đã chấm sao cho tiết tự học của em.' end,
+      new.plan_id
+    );
+  end if;
+
+  if new.teacher_comment is distinct from old.teacher_comment and nullif(trim(new.teacher_comment), '') is not null then
+    insert into public.notifications (user_id, kind, title, body, plan_id)
+    values (new.student_id, 'comment',
+            'Nhận xét mới cho tiết ' || v_plan.period || ' môn ' || v_plan.subject,
+            new.teacher_comment, new.plan_id);
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_reflection_feedback on public.reflections;
+create trigger trg_notify_reflection_feedback after update on public.reflections
+for each row execute function public.notify_on_reflection_feedback();
+
+create or replace function public.notify_on_device_review()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.device_status is distinct from old.device_status
+     and new.device_status in ('Đã duyệt', 'Từ chối') then
+    insert into public.notifications (user_id, kind, title, body, plan_id)
+    values (new.student_id, 'device',
+            'Đăng ký thiết bị tiết ' || new.period || ' ngày ' || to_char(new.study_date, 'DD/MM') || ': ' || new.device_status,
+            new.device_review_note, new.id);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_device_review on public.plans;
+create trigger trg_notify_device_review after update on public.plans
+for each row execute function public.notify_on_device_review();
+
+-- Tin nhắn: báo cho tất cả người trong luồng trừ người gửi.
+create or replace function public.notify_on_message()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_conv record; v_sender text; r record;
+begin
+  select c.*, p.full_name as student_name into v_conv
+  from public.conversations c join public.profiles p on p.id = c.student_id
+  where c.id = new.conversation_id;
+
+  select full_name into v_sender from public.profiles where id = new.sender_id;
+  update public.conversations set last_message_at = new.created_at where id = new.conversation_id;
+
+  -- Học sinh chủ luồng
+  if new.sender_id <> v_conv.student_id then
+    insert into public.notifications (user_id, kind, title, body, conversation_id)
+    values (v_conv.student_id, 'message', 'Tin nhắn mới từ ' || v_sender, left(new.body, 160), new.conversation_id);
+  end if;
+
+  -- Giáo viên phụ trách lớp
+  for r in select teacher_id from public.class_teachers where class_id = v_conv.class_id loop
+    if r.teacher_id <> new.sender_id then
+      insert into public.notifications (user_id, kind, title, body, conversation_id)
+      values (r.teacher_id, 'message', 'Tin nhắn mới — ' || v_conv.student_name, left(new.body, 160), new.conversation_id);
+    end if;
+  end loop;
+
+  -- Trợ giảng được bật quyền chat
+  for r in select student_id from public.class_assistants where class_id = v_conv.class_id and can_chat loop
+    if r.student_id <> new.sender_id and r.student_id <> v_conv.student_id then
+      insert into public.notifications (user_id, kind, title, body, conversation_id)
+      values (r.student_id, 'message', 'Tin nhắn mới — ' || v_conv.student_name, left(new.body, 160), new.conversation_id);
+    end if;
+  end loop;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_message on public.messages;
+create trigger trg_notify_message after insert on public.messages
+for each row execute function public.notify_on_message();
+
 -- ---------- RLS ----------
-alter table public.school_years   enable row level security;
-alter table public.classes        enable row level security;
-alter table public.class_teachers enable row level security;
-alter table public.students       enable row level security;
-alter table public.enrollments    enable row level security;
-alter table public.profiles       enable row level security;
-alter table public.plans          enable row level security;
-alter table public.reflections    enable row level security;
-alter table public.evidence       enable row level security;
+alter table public.school_years       enable row level security;
+alter table public.classes            enable row level security;
+alter table public.class_teachers     enable row level security;
+alter table public.class_assistants   enable row level security;
+alter table public.students           enable row level security;
+alter table public.enrollments        enable row level security;
+alter table public.profiles           enable row level security;
+alter table public.plans              enable row level security;
+alter table public.reflections        enable row level security;
+alter table public.evidence           enable row level security;
+alter table public.conversations      enable row level security;
+alter table public.messages           enable row level security;
+alter table public.conversation_reads enable row level security;
+alter table public.notifications      enable row level security;
 
 do $$
 declare p record;
 begin
   for p in select schemaname, tablename, policyname from pg_policies
            where schemaname='public'
-             and tablename in ('school_years','classes','class_teachers','students','enrollments',
-                               'profiles','plans','reflections','evidence')
+             and tablename in ('school_years','classes','class_teachers','class_assistants',
+                               'students','enrollments','profiles','plans','reflections','evidence',
+                               'conversations','messages','conversation_reads','notifications')
   loop
     execute format('drop policy if exists %I on %I.%I', p.policyname, p.schemaname, p.tablename);
   end loop;
@@ -390,6 +674,16 @@ for select to authenticated using (true);
 
 create policy class_teachers_read on public.class_teachers
 for select to authenticated using (teacher_id = auth.uid());
+
+-- Trợ giảng: giáo viên quản lý toàn bộ; TA chỉ đọc được dòng quyền của CHÍNH MÌNH
+-- (để giao diện biết hiện những gì), không xem được quyền của TA khác.
+create policy assistants_teacher_all on public.class_assistants
+for all to authenticated
+using (public.teaches_class(class_id))
+with check (public.teaches_class(class_id));
+
+create policy assistants_self_read on public.class_assistants
+for select to authenticated using (student_id = auth.uid());
 
 -- Danh sách lớp: học sinh KHÔNG đọc được của bạn khác; GV chỉ đọc lớp mình phụ trách.
 -- Lọc theo GHI DANH chứ không theo claimed_user_id — nếu không, em nào chưa tạo
@@ -407,10 +701,15 @@ for select to authenticated using (public.teaches_class(class_id));
 create policy enrollments_student_read on public.enrollments
 for select to authenticated using (mshs = public.my_mshs());
 
--- Hồ sơ: HS đọc của mình; GV đọc HS lớp mình + chính mình.
+-- Hồ sơ: HS đọc của mình và đọc tên giáo viên / trợ giảng lớp mình (để hiện trong
+-- chat và nhận xét); giáo viên và trợ giảng đọc HS lớp mình.
 create policy profiles_read on public.profiles
 for select to authenticated
-using (id = auth.uid() or public.teaches_user(id));
+using (
+  id = auth.uid()
+  or public.staff_sees_student(id, 'view_plans')
+  or public.shares_class_staff(id)
+);
 
 -- KẾ HOẠCH
 create policy plans_student_select on public.plans
@@ -433,14 +732,15 @@ create policy plans_student_delete on public.plans
 for delete to authenticated
 using (student_id = auth.uid() and study_date > public.vn_today());
 
-create policy plans_teacher_select on public.plans
-for select to authenticated using (public.teaches_class(class_id));
+create policy plans_staff_select on public.plans
+for select to authenticated using (public.staff_perm(class_id, 'view_plans'));
 
--- GV được UPDATE để duyệt thiết bị; trigger phía trên khóa mọi cột khác lại.
-create policy plans_teacher_update on public.plans
+-- Nhân sự lớp được UPDATE để duyệt thiết bị; trigger phía trên khóa mọi cột khác lại
+-- và tự kiểm quyền review_device.
+create policy plans_staff_update on public.plans
 for update to authenticated
-using (public.teaches_class(class_id))
-with check (public.teaches_class(class_id));
+using (public.staff_perm(class_id, 'review_device'))
+with check (public.staff_perm(class_id, 'review_device'));
 
 -- PHẢN TƯ
 create policy reflections_student_select on public.reflections
@@ -464,14 +764,19 @@ with check (
   and exists (select 1 from public.plans p where p.id = plan_id and p.student_id = auth.uid() and p.study_date <= public.vn_today())
 );
 
-create policy reflections_teacher_select on public.reflections
+-- Đọc phản tư đầy đủ: giáo viên luôn; trợ giảng chỉ khi được bật view_reflections.
+-- TA chỉ có view_help thì dùng view public.help_requests bên dưới (lọc sẵn cột).
+create policy reflections_staff_select on public.reflections
 for select to authenticated
-using (exists (select 1 from public.plans p where p.id = plan_id and public.teaches_class(p.class_id)));
+using (exists (select 1 from public.plans p where p.id = plan_id and public.staff_perm(p.class_id, 'view_reflections')));
 
-create policy reflections_teacher_update on public.reflections
+-- Ghi: mở cho ai có quyền nhận xét HOẶC chấm sao; trigger quyết định cột nào được đổi.
+create policy reflections_staff_update on public.reflections
 for update to authenticated
-using (exists (select 1 from public.plans p where p.id = plan_id and public.teaches_class(p.class_id)))
-with check (exists (select 1 from public.plans p where p.id = plan_id and public.teaches_class(p.class_id)));
+using (exists (select 1 from public.plans p where p.id = plan_id
+               and (public.staff_perm(p.class_id, 'comment') or public.staff_perm(p.class_id, 'rate'))))
+with check (exists (select 1 from public.plans p where p.id = plan_id
+               and (public.staff_perm(p.class_id, 'comment') or public.staff_perm(p.class_id, 'rate'))));
 
 -- MINH CHỨNG
 create policy evidence_student_select on public.evidence
@@ -491,9 +796,74 @@ create policy evidence_student_delete on public.evidence
 for delete to authenticated
 using (student_id = auth.uid() and exists (select 1 from public.plans p where p.id = plan_id and p.student_id = auth.uid()));
 
-create policy evidence_teacher_select on public.evidence
+create policy evidence_staff_select on public.evidence
 for select to authenticated
-using (exists (select 1 from public.plans p where p.id = plan_id and public.teaches_class(p.class_id)));
+using (exists (select 1 from public.plans p where p.id = plan_id and public.staff_perm(p.class_id, 'view_evidence')));
+
+-- ---------- CHAT ----------
+-- Luồng của học sinh: chính em, giáo viên lớp, và trợ giảng được bật quyền chat.
+create policy conversations_read on public.conversations
+for select to authenticated
+using (student_id = auth.uid() or public.staff_perm(class_id, 'chat'));
+
+create policy conversations_insert on public.conversations
+for insert to authenticated
+with check (
+  (student_id = auth.uid() and class_id = public.student_active_class(auth.uid()))
+  or public.staff_perm(class_id, 'chat')
+);
+
+create policy messages_read on public.messages
+for select to authenticated
+using (exists (select 1 from public.conversations c where c.id = conversation_id
+               and (c.student_id = auth.uid() or public.staff_perm(c.class_id, 'chat'))));
+
+-- Chỉ gửi được với danh nghĩa chính mình, và chỉ trong luồng mình có mặt.
+create policy messages_insert on public.messages
+for insert to authenticated
+with check (
+  sender_id = auth.uid()
+  and exists (select 1 from public.conversations c where c.id = conversation_id
+              and (c.student_id = auth.uid() or public.staff_perm(c.class_id, 'chat')))
+);
+
+create policy reads_own on public.conversation_reads
+for all to authenticated
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+-- ---------- THÔNG BÁO ----------
+-- Chỉ đọc của mình; chỉ được đổi mốc đã đọc. Bản ghi do trigger sinh bằng service role.
+create policy notifications_read on public.notifications
+for select to authenticated using (user_id = auth.uid());
+
+create policy notifications_mark_read on public.notifications
+for update to authenticated
+using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- ---------- VIEW cho trợ giảng chỉ có quyền xem "cần hỗ trợ" ----------
+-- RLS chặn được dòng nhưng không chặn được cột, nên phần TA được xem giới hạn
+-- phải đi qua view: chỉ lộ nội dung yêu cầu hỗ trợ, KHÔNG lộ ghi chú phản tư
+-- riêng tư, nhận xét của giáo viên hay điểm sao.
+drop view if exists public.help_requests;
+create view public.help_requests
+with (security_invoker = false) as
+select
+  r.plan_id,
+  r.student_id,
+  r.help_note,
+  r.help_resolved,
+  r.completed_at,
+  p.class_id,
+  p.study_date,
+  p.period,
+  p.subject
+from public.reflections r
+join public.plans p on p.id = r.plan_id
+where r.need_help
+  and public.staff_perm(p.class_id, 'view_help');
+
+grant select on public.help_requests to authenticated;
 
 -- ---------- Storage ----------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -526,7 +896,7 @@ using (
   bucket_id='evidence'
   and (
     (storage.foldername(name))[1] = auth.uid()::text
-    or public.teaches_user(((storage.foldername(name))[1])::uuid)
+    or public.staff_sees_student(((storage.foldername(name))[1])::uuid, 'view_evidence')
   )
 );
 
@@ -544,12 +914,16 @@ using (
 -- ---------- Quyền cấp bảng ----------
 -- RLS là lớp chặn theo dòng. Grant là lớp thứ hai: thu hồi toàn bộ quyền mặc định
 -- của Supabase rồi trả lại đúng những verb thực sự cần.
-revoke all on public.school_years, public.classes, public.class_teachers, public.students,
-              public.enrollments, public.profiles, public.plans, public.reflections, public.evidence
+revoke all on public.school_years, public.classes, public.class_teachers, public.class_assistants,
+              public.students, public.enrollments, public.profiles, public.plans, public.reflections,
+              public.evidence, public.conversations, public.messages, public.conversation_reads,
+              public.notifications
        from anon, authenticated;
 
-grant select on public.school_years, public.classes, public.class_teachers, public.students,
-                public.enrollments, public.profiles, public.plans, public.reflections, public.evidence
+grant select on public.school_years, public.classes, public.class_teachers, public.class_assistants,
+                public.students, public.enrollments, public.profiles, public.plans, public.reflections,
+                public.evidence, public.conversations, public.messages, public.conversation_reads,
+                public.notifications
       to authenticated;
 
 -- profiles / students / enrollments / classes chỉ được ghi bởi Edge Function và script
@@ -557,5 +931,10 @@ grant select on public.school_years, public.classes, public.class_teachers, publ
 grant insert, update, delete on public.plans to authenticated;
 grant insert, update on public.reflections to authenticated;
 grant insert, delete on public.evidence to authenticated;
+grant insert, update, delete on public.class_assistants to authenticated;   -- RLS: chỉ giáo viên lớp
+grant insert on public.conversations to authenticated;
+grant insert on public.messages to authenticated;                            -- không sửa/xóa tin đã gửi
+grant insert, update on public.conversation_reads to authenticated;
+grant update on public.notifications to authenticated;                       -- chỉ để đánh dấu đã đọc
 
 -- Danh sách lớp được nạp riêng bằng supabase/seed-roster.private.sql

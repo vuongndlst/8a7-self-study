@@ -3,15 +3,19 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
+const EMPTY_CONTEXT = { className: '', yearName: '', classId: null }
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [context, setContext] = useState({ className: '', yearName: '', classId: null })
+  const [context, setContext] = useState(EMPTY_CONTEXT)
+  // Quyền trợ giảng của chính người đang đăng nhập (null = không phải TA).
+  const [assistant, setAssistant] = useState(null)
   const [recovery, setRecovery] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const loadProfile = async (user) => {
-    if (!user) { setProfile(null); setContext({ className: '', yearName: '', classId: null }); return }
+    if (!user) { setProfile(null); setContext(EMPTY_CONTEXT); setAssistant(null); return }
 
     const { data } = await supabase
       .from('profiles')
@@ -21,7 +25,6 @@ export function AuthProvider({ children }) {
     setProfile(data ?? null)
     if (!data) return
 
-    // Lớp / năm học hiện hành — dùng cho tiêu đề và bộ lọc, không phải để phân quyền.
     if (data.role === 'teacher') {
       const { data: rows } = await supabase
         .from('class_teachers')
@@ -32,6 +35,7 @@ export function AuthProvider({ children }) {
         className: active?.classes?.name ?? '',
         yearName: active?.classes?.school_years?.name ?? '',
       })
+      setAssistant(null)
     } else {
       const { data: rows } = await supabase
         .from('enrollments')
@@ -43,6 +47,14 @@ export function AuthProvider({ children }) {
         className: active?.classes?.name ?? '',
         yearName: active?.classes?.school_years?.name ?? '',
       })
+
+      // Em này có được cử làm trợ giảng không, và được bật những quyền nào.
+      const { data: ta } = await supabase
+        .from('class_assistants')
+        .select('*')
+        .eq('student_id', user.id)
+        .maybeSingle()
+      setAssistant(ta ?? null)
     }
   }
 
@@ -68,12 +80,14 @@ export function AuthProvider({ children }) {
     session,
     profile,
     context,
+    assistant,
+    isAssistant: !!assistant,
     recovery,
     loading,
     clearRecovery: () => setRecovery(false),
     refreshProfile: () => loadProfile(session?.user),
     signOut: () => supabase.auth.signOut(),
-  }), [session, profile, context, recovery, loading])
+  }), [session, profile, context, assistant, recovery, loading])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

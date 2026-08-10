@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarPlus, ChevronDown, ExternalLink, FileUp, KeyRound, MessageSquareQuote, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, ChevronDown, ExternalLink, FileUp, KeyRound, MessageSquare, MessageSquareQuote, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase, callFunction } from '../lib/supabase'
 import { daysUntil, formatDate, registrationStatus, todayISO } from '../utils/date'
 import { passwordChecks, validateStudentPassword } from '../utils/password'
 import StatusBadge from '../components/StatusBadge'
+import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
+import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
 
 const activityOptions=['Bài tập cá nhân','Ôn tập','Công việc nhóm','Đọc sách','Chuẩn bị nội dung chia sẻ','Khác']
 const subjectOptions=['Toán','Ngữ văn','Tiếng Anh','Khoa học tự nhiên','Lịch sử & Địa lý','GDCD','Tin học','Công nghệ','Nghệ thuật','Khác']
@@ -23,6 +25,8 @@ export default function StudentPage(){
   const [message,setMessage]=useState('')
   const [openPlan,setOpenPlan]=useState(null)
   const [showPassword,setShowPassword]=useState(false)
+  const [showChat,setShowChat]=useState(false)
+  const [conversationId,setConversationId]=useState(null)
 
   const load=async()=>{
     const {data:p}=await supabase.from('plans').select('*').order('study_date',{ascending:false}).order('period',{ascending:true})
@@ -69,6 +73,16 @@ export default function StudentPage(){
   // Tiết đã qua mà chưa cập nhật kết quả — nhắc ngay trên đầu trang.
   const pendingReflections=past.filter(p=>!reflections[p.id]).length
   const newComments=Object.values(reflections).filter(r=>r.teacher_comment).length
+  const rated=Object.values(reflections).filter(r=>r.rating!=null)
+  const avgRating=rated.length?(rated.reduce((s,r)=>s+r.rating,0)/rated.length).toFixed(1):null
+  // Tiết bị chấm 1–2 sao mà em chưa viết phản hồi điều chỉnh.
+  const needsAck=plans.filter(p=>{const r=reflections[p.id];return r?.rating!=null&&r.rating<=2&&!r.student_ack_at})
+
+  const openChat=async()=>{
+    if(!context.classId)return
+    const id=conversationId??await getOrCreateConversation(context.classId,profile.id)
+    setConversationId(id);setShowChat(true)
+  }
 
   return <div className="page">
     <section className="dashboard-heading">
@@ -78,6 +92,7 @@ export default function StudentPage(){
         <p>MSHS: <strong>{profile?.mshs}</strong>{context.className?<> · Lớp <strong>{context.className}</strong>{context.yearName?` (${context.yearName})`:''}</>:null} · Lập kế hoạch trước, thực hiện có mục tiêu, rồi nhìn lại kết quả.</p>
       </div>
       <div className="button-row">
+        <button className="button ghost" onClick={openChat}><MessageSquare size={17}/> Nhắn giáo viên</button>
         <button className="button ghost" onClick={()=>setShowPassword(true)}><KeyRound size={17}/> Đổi mật khẩu</button>
         <button className="button primary" onClick={()=>setShowForm(!showForm)}><CalendarPlus size={18}/> Đăng ký giờ tự học</button>
       </div>
@@ -87,9 +102,12 @@ export default function StudentPage(){
       <Stat label="Kế hoạch sắp tới" value={upcoming.length}/>
       <Stat label="Đúng hạn" value={`${onTimeRate}%`}/>
       <Stat label="Đã hoàn thành" value={completedCount}/>
-      <Stat label="Minh chứng" value={evidenceCount}/>
+      <Stat label="Điểm trung bình" value={avgRating?`${avgRating}/5`:'—'}/>
     </section>
 
+    {needsAck.length>0&&<div className="notice danger"><AlertTriangle size={18}/><span>
+      Có <strong>{needsAck.length} tiết</strong> bị đánh giá thấp và em <strong>chưa viết phản hồi</strong>. Mở thẻ có viền đỏ/vàng bên dưới, đọc nhận xét rồi ghi một dòng cho biết em sẽ điều chỉnh thế nào.
+    </span></div>}
     {pendingReflections>0&&<div className="notice warning"><ShieldCheck size={18}/><span>Em còn <strong>{pendingReflections} tiết</strong> đã qua mà chưa cập nhật kết quả. Mở thẻ ở mục “Lịch sử gần đây” để bổ sung.</span></div>}
     {newComments>0&&<div className="notice"><MessageSquareQuote size={18}/><span>Giáo viên đã nhận xét <strong>{newComments}</strong> lần phản tư của em.</span></div>}
     {message&&<div className="notice"><ShieldCheck size={18}/><span>{message}</span></div>}
@@ -109,6 +127,12 @@ export default function StudentPage(){
       ?<EditPlanModal plan={openPlan} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>
       :<ReflectionModal plan={openPlan} existing={reflections[openPlan.id]} evidence={evidence[openPlan.id]||[]} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>)}
     {showPassword&&<ChangePasswordModal mshs={profile?.mshs} onClose={()=>setShowPassword(false)}/>}
+    {showChat&&<div className="modal-backdrop" onMouseDown={()=>setShowChat(false)}>
+      <div className="modal" onMouseDown={e=>e.stopPropagation()}>
+        <div className="modal-head"><div><span className="eyebrow">TIN NHẮN</span><h2>Hỏi giáo viên</h2></div><button className="icon-button" onClick={()=>setShowChat(false)}>✕</button></div>
+        <ChatPanel conversationId={conversationId}/>
+      </div>
+    </div>}
   </div>
 }
 
@@ -152,7 +176,10 @@ function PlanCard({plan,reflection,evidence,onOpen,onChanged}){
     if(error)window.alert('Không thể xóa kế hoạch này.')
     onChanged()
   }
-  return <article className="card plan-card" onClick={onOpen}>
+  // Viền đỏ khi bị 1 sao, viền vàng khi 2 sao — để em nhìn thấy ngay trong danh sách.
+  const tone=ratingTone(reflection?.rating)
+  const needsAck=reflection?.rating!=null&&reflection.rating<=2&&!reflection.student_ack_at
+  return <article className={`card plan-card ${tone}`} onClick={onOpen}>
     <div className="plan-card-top">
       <span className="date-chip">{formatDate(plan.study_date)} · Tiết {plan.period}</span>
       <span className="plan-card-actions">
@@ -162,6 +189,8 @@ function PlanCard({plan,reflection,evidence,onOpen,onChanged}){
     </div>
     <h3>{plan.subject}</h3><p>{plan.task}</p>
     <div className="plan-meta"><span>Ưu tiên: <StatusBadge value={plan.priority}/></span><DeviceBadge plan={plan}/></div>
+    {reflection?.rating!=null&&<div className="plan-rating"><RatingStars value={reflection.rating} readOnly size={15}/></div>}
+    {needsAck&&<div className="ack-warning"><AlertTriangle size={14}/><span>Em cần viết phản hồi cho tiết này</span></div>}
     {reflection?.teacher_comment&&<div className="teacher-comment"><MessageSquareQuote size={14}/><span>{reflection.teacher_comment}</span></div>}
     <div className="plan-footer">
       <span>{reflection?<StatusBadge value={reflection.completion_status}/>:<span className="muted-text">Chưa cập nhật kết quả</span>}</span>
@@ -212,7 +241,23 @@ function EditPlanModal({plan,onClose,onSaved}){
 
 function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
   const [form,setForm]=useState({completion_status:existing?.completion_status||'Hoàn thành',note:existing?.note||'',need_help:existing?.need_help||false,help_note:existing?.help_note||''})
+  const [ack,setAck]=useState(existing?.student_ack_note||'')
+  const [ackBusy,setAckBusy]=useState(false)
+  const [ackMsg,setAckMsg]=useState('')
   const [link,setLink]=useState('');const [file,setFile]=useState(null);const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('')
+  const lowRating=existing?.rating!=null&&existing.rating<=2
+
+  const saveAck=async()=>{
+    setAckMsg('')
+    if(!ack.trim())return setAckMsg('Hãy viết một dòng cho biết em sẽ điều chỉnh thế nào.')
+    setAckBusy(true)
+    const {error}=await supabase.from('reflections').update({student_ack_note:ack.trim()}).eq('plan_id',plan.id)
+    setAckBusy(false)
+    if(error)return setAckMsg('Không lưu được phản hồi.')
+    setAckMsg('✓ Đã gửi phản hồi cho giáo viên.')
+    onSaved()
+  }
+
   const save=async()=>{
     setBusy(true);setMsg('')
     const additions=(link.trim()?1:0)+(file?1:0)
@@ -252,7 +297,24 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
     <div className="modal-head"><div><span className="eyebrow">{formatDate(plan.study_date)} · TIẾT {plan.period}</span><h2>{plan.subject}</h2></div><button className="icon-button" onClick={onClose}>✕</button></div>
     <div className="detail-box"><strong>Nhiệm vụ</strong><p>{plan.task}</p><strong>Mục tiêu</strong><p>{plan.goal}</p></div>
     {plan.use_device&&<div className="detail-box"><strong>Đăng ký thiết bị điện tử</strong><p><StatusBadge value={plan.device_status}/> {plan.device_review_note?`— ${plan.device_review_note}`:''}</p></div>}
+
+    {existing?.rating!=null&&<div className={`detail-box rating-box ${ratingTone(existing.rating)}`}>
+      <strong>Giáo viên đánh giá</strong>
+      <p><RatingStars value={existing.rating} readOnly/> — {ratingLabel(existing.rating)}</p>
+    </div>}
     {existing?.teacher_comment&&<div className="detail-box highlight"><strong>Nhận xét của giáo viên</strong><p>{existing.teacher_comment}</p></div>}
+
+    {lowRating&&<div className={`detail-box ${existing.student_ack_at?'':'alarm-red'}`}>
+      <strong>{existing.student_ack_at?'Phản hồi của em':'Em cần phản hồi trước khi tiếp tục'}</strong>
+      <p className="muted-text small">Tiết này được đánh giá {existing.rating}/5. Hãy ghi ngắn gọn em sẽ điều chỉnh thế nào ở tiết sau.</p>
+      <textarea rows="2" maxLength={500} value={ack} onChange={e=>setAck(e.target.value)}
+                placeholder="Ví dụ: Em sẽ chuẩn bị đề cương trước và không dùng điện thoại trong giờ."/>
+      {ackMsg&&<div className={ackMsg.startsWith('✓')?'notice compact':'form-error'}>{ackMsg}</div>}
+      <button type="button" className="button primary" onClick={saveAck} disabled={ackBusy}>
+        {ackBusy?'Đang gửi…':existing.student_ack_at?'Cập nhật phản hồi':'Gửi phản hồi'}
+      </button>
+      {existing.student_ack_at&&<small className="muted-text">Đã gửi lúc {new Date(existing.student_ack_at).toLocaleString('vi-VN')}</small>}
+    </div>}
     <label>Kết quả *</label><select value={form.completion_status} onChange={e=>setForm({...form,completion_status:e.target.value})}><option>Hoàn thành</option><option>Một phần</option><option>Chưa hoàn thành</option></select>
     <label>Ghi chú sau giờ tự học</label><textarea rows="2" maxLength={1000} value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Điều em muốn ghi lại…"/>
     <div className="toggle-row"><label className="switch"><input type="checkbox" checked={form.need_help} onChange={e=>setForm({...form,need_help:e.target.checked})}/><span/></label><div><strong>Em cần giáo viên hỗ trợ</strong><small>Bật khi em còn vướng và muốn giáo viên biết.</small></div></div>
