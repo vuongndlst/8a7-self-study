@@ -22,6 +22,7 @@ const PERM_LABEL = {
   can_rate: 'Chấm sao',
   can_comment: 'Viết nhận xét',
   can_review_device: 'Duyệt thiết bị',
+  can_approve_plan: 'Duyệt kế hoạch',
 }
 
 export default function TaPage() {

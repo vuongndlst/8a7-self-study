@@ -169,7 +169,39 @@ của TA khác, hay thấy dữ liệu lớp khác. Mọi lượt chấm sao / n
 
 Dashboard riêng của TA ở `#/ta`, chỉ hiện khi em được cử.
 
-## 7. Hạn cập nhật kết quả — tự động hóa
+## 7. Duyệt kế hoạch
+
+Một kế hoạch có **hai chiều độc lập** — đừng trộn lẫn:
+
+| Chiều | Giá trị | Ai đổi |
+|---|---|---|
+| **Duyệt** (`review_status`) | Chờ duyệt · Đã duyệt · Cần điều chỉnh | Giáo viên, hoặc TA có `can_approve_plan` |
+| **Tiến độ** (`progress`) | Chưa tới buổi · Đang chờ cập nhật · Trễ hạn · Đã hoàn thành · Hệ thống tự đánh giá | Suy ra từ dữ liệu, không ai nhập tay |
+
+Trạng thái *"Đã duyệt · Trễ hạn cập nhật"* là hoàn toàn hợp lệ: duyệt xong không có nghĩa là đã làm.
+
+### Duyệt hàng loạt
+
+Dashboard mở bằng hàng thẻ **việc cần xử lý** — bấm vào thẻ là lọc thẳng xuống bảng.
+Từ đó **3 click là duyệt xong cả nhóm**: bấm thẻ *Chờ duyệt* → *Chọn tất cả chờ duyệt* →
+*Duyệt N kế hoạch* → xác nhận.
+
+Toàn bộ chạy trong **một lệnh** `bulk_review_plans(ids, status, note)` chứ không phải N
+request. Hàm chạy dưới quyền người gọi (không phải `security definer`) nên RLS và trigger
+tách cột vẫn áp dụng nguyên vẹn — chỉ những kế hoạch thuộc lớp mà người gọi có quyền mới
+đổi được. Hàm trả về `{yêu_cầu, đã_xử_lý, bỏ_qua}` để giao diện nói đúng phạm vi.
+
+Bộ lọc: duyệt · tiến độ · khoảng ngày · học sinh · môn · tiết · thiết bị · tìm kiếm, kèm
+6 kiểu sắp xếp. Đổi bộ lọc thì **tự bỏ chọn** để không thao tác nhầm lên nhóm không còn nhìn thấy.
+
+### Yêu cầu điều chỉnh
+
+Giáo viên gửi kèm lời nhắn (bắt buộc). Học sinh nhận thông báo có nội dung nhắn.
+Khi em **sửa lại nhiệm vụ/mục tiêu/môn**, kế hoạch **tự quay về hàng chờ duyệt** và tăng
+`review_version` — không phải đăng ký lại từ đầu. Khóa chống trùng thông báo dùng
+`plan-review:<id>:<version>` nên mỗi vòng duyệt chỉ báo một lần.
+
+## 8. Hạn cập nhật kết quả — tự động hóa
 
 Vòng lặp Plan → Do → **Update** → Reflect hay đứt ở bước 3: lúc audit có **7/9 kế hoạch
 đã qua ngày không bao giờ được cập nhật kết quả (78%)**. Hệ thống tự xử lý phần này.
@@ -225,7 +257,7 @@ Học sinh vẫn cập nhật được sau khi bị tự đánh giá. Khi đó h
 (`auto_evaluated`, `auto_evaluated_at`), đóng dấu `late_result_at` và bật `needs_recheck`
 để giáo viên thấy trên dashboard và chấm lại. Học sinh không tự xóa được các dấu này.
 
-## 8. Nhắc quá hạn — hiển thị trong ứng dụng
+## 9. Nhắc quá hạn — hiển thị trong ứng dụng
 
 Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên màn hình:
 
@@ -235,7 +267,7 @@ Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên
 - **Học sinh** — banner cảnh báo số tiết đã qua mà chưa cập nhật kết quả, và báo khi
   giáo viên có nhận xét mới.
 
-## 9. Deploy Edge Functions
+## 10. Deploy Edge Functions
 
 ```bash
 npx supabase login
@@ -253,7 +285,7 @@ npx supabase functions deploy student-change-password --no-verify-jwt
 | `teacher-reset-password` | giáo viên | đọc Bearer token, phải là teacher **và** phụ trách lớp của HS đó |
 | `student-change-password` | học sinh | phải là student, đúng mật khẩu hiện tại, đủ luật mật khẩu |
 
-## 10. Quyền dữ liệu
+## 11. Quyền dữ liệu
 
 **Học sinh** — chỉ đọc/ghi dữ liệu của chính mình; không đọc danh sách lớp; chỉ tạo kế
 hoạch cho hôm nay trở đi; chỉ sửa/xóa kế hoạch còn ở tương lai; chỉ nộp phản tư và minh
@@ -273,7 +305,7 @@ chặn được cột.
 > (`teaches_mshs`, `my_mshs`). Viết thẳng `exists (select … from enrollments)` trong policy
 > của `students` sẽ khiến Postgres báo `42P17 infinite recursion`.
 
-## 11. Cấu trúc
+## 12. Cấu trúc
 
 ```text
 src/

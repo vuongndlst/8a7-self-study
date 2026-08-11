@@ -75,6 +75,7 @@ create table if not exists public.class_assistants (
   can_comment          boolean not null default false,  -- viết nhận xét
   can_review_device    boolean not null default false,  -- duyệt đăng ký thiết bị
   granted_by uuid references public.profiles(id) on delete set null,
+  -- v5: duyệt kế hoạch (khác với duyệt thiết bị). Mặc định đóng.
   created_at timestamptz not null default now(),
   primary key (class_id, student_id)
 );
@@ -140,6 +141,41 @@ create table if not exists public.reflections (
   updated_at timestamptz not null default now(),
   constraint help_note_required check (not need_help or nullif(trim(help_note),'') is not null)
 );
+
+alter table public.class_assistants add column if not exists can_approve_plan boolean not null default false;
+
+-- v5: DUYỆT KẾ HOẠCH — tách hẳn khỏi tiến độ cập nhật kết quả.
+-- Một kế hoạch có hai chiều độc lập: "đã duyệt chưa" và "đã cập nhật kết quả chưa".
+-- Ví dụ hoàn toàn hợp lệ: Đã duyệt · Trễ hạn cập nhật.
+alter table public.plans add column if not exists review_status text not null default 'Chờ duyệt';
+alter table public.plans add column if not exists review_by uuid references public.profiles(id) on delete set null;
+alter table public.plans add column if not exists review_at timestamptz;
+alter table public.plans add column if not exists review_note text;
+-- Tăng mỗi lần đổi kết luận duyệt — dùng làm khóa chống trùng thông báo.
+alter table public.plans add column if not exists review_version integer not null default 0;
+
+do $$ begin
+  alter table public.plans add constraint plans_review_status_check
+    check (review_status in ('Chờ duyệt','Đã duyệt','Cần điều chỉnh'));
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.plans add constraint plans_review_note_check
+    check (review_note is null or char_length(review_note) <= 500);
+exception when duplicate_object then null; end $$;
+
+create index if not exists plans_review_idx on public.plans (class_id, review_status);
+
+-- Chuyển dữ liệu cũ: kế hoạch nào giáo viên ĐÃ duyệt thiết bị thì coi như đã duyệt
+-- kế hoạch, giữ đúng người và thời điểm — không bắt thầy cô duyệt lại việc đã làm.
+update public.plans
+   set review_status = 'Đã duyệt',
+       review_by     = device_reviewed_by,
+       review_at     = device_reviewed_at,
+       review_version = 1
+ where device_status = 'Đã duyệt'
+   and review_status = 'Chờ duyệt'
+   and review_at is null;
 
 -- v4: đánh dấu bản ghi do hệ thống tự sinh khi học sinh không cập nhật kết quả.
 alter table public.reflections add column if not exists auto_evaluated boolean not null default false;
@@ -357,6 +393,7 @@ returns boolean language sql stable security definer set search_path = public as
         when 'rate'             then can_rate
         when 'comment'          then can_comment
         when 'review_device'    then can_review_device
+        when 'approve_plan'     then can_approve_plan
         else false
       end
       from public.class_assistants
@@ -484,8 +521,22 @@ begin
       new.device_reviewed_at := null;
       new.device_review_note := null;
     end if;
+    -- Kết luận duyệt là việc của giáo viên.
+    new.review_status  := old.review_status;
+    new.review_by      := old.review_by;
+    new.review_at      := old.review_at;
+    new.review_note    := old.review_note;
+    new.review_version := old.review_version;
+    -- Sửa nội dung kế hoạch đã bị "Cần điều chỉnh" → quay lại hàng chờ duyệt.
+    if old.review_status = 'Cần điều chỉnh'
+       and (new.task is distinct from old.task
+            or new.goal is distinct from old.goal
+            or new.subject is distinct from old.subject) then
+      new.review_status  := 'Chờ duyệt';
+      new.review_version := old.review_version + 1;
+    end if;
   else
-    -- Nhân sự lớp: CHỈ được duyệt thiết bị, không sửa nội dung kế hoạch của HS.
+    -- Nhân sự lớp: CHỈ được duyệt thiết bị / duyệt kế hoạch, không sửa nội dung.
     new.student_id        := old.student_id;
     new.class_id          := old.class_id;
     new.study_date        := old.study_date;
@@ -498,6 +549,19 @@ begin
     new.use_device        := old.use_device;
     new.device_purpose    := old.device_purpose;
     new.fallback_activity := old.fallback_activity;
+    if new.review_status is distinct from old.review_status then
+      if public.staff_perm(old.class_id, 'approve_plan') then
+        new.review_by      := auth.uid();
+        new.review_at      := now();
+        new.review_version := old.review_version + 1;
+      else
+        new.review_status  := old.review_status;
+        new.review_by      := old.review_by;
+        new.review_at      := old.review_at;
+        new.review_note    := old.review_note;
+        new.review_version := old.review_version;
+      end if;
+    end if;
     if new.device_status is distinct from old.device_status then
       if public.staff_perm(old.class_id, 'review_device') then
         new.device_reviewed_by := auth.uid();
@@ -647,6 +711,8 @@ select
   p.period,
   p.subject,
   p.created_at,
+  p.review_status,
+  p.review_note,
   public.result_clock_start(p.study_date, p.created_at) as clock_start,
   public.result_clock_start(p.study_date, p.created_at)
     + make_interval(hours => coalesce((select value_int from public.app_settings where key='overdue_hours'), 48)) as overdue_at,
@@ -718,6 +784,36 @@ $$;
 drop trigger if exists trg_notify_device_review on public.plans;
 create trigger trg_notify_device_review after update on public.plans
 for each row execute function public.notify_on_device_review();
+
+-- Báo cho học sinh khi kế hoạch được duyệt / bị yêu cầu điều chỉnh.
+create or replace function public.notify_on_plan_review()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.review_status is distinct from old.review_status
+     and new.review_status in ('Đã duyệt','Cần điều chỉnh') then
+    insert into public.notifications (user_id, kind, title, body, plan_id, dedupe_key)
+    values (
+      new.student_id,
+      case when new.review_status = 'Đã duyệt' then 'device' else 'system' end,
+      case when new.review_status = 'Đã duyệt'
+        then 'Kế hoạch đã được duyệt'
+        else 'Kế hoạch cần điều chỉnh' end,
+      'Nhiệm vụ ' || new.subject || ' ngày ' || to_char(new.study_date, 'DD/MM')
+        || ' · Tiết ' || new.period
+        || case when new.review_status = 'Đã duyệt' then ' của em đã được duyệt.'
+                else '. ' || coalesce(new.review_note, 'Em xem lại và chỉnh sửa giúp thầy cô nhé.') end,
+      new.id,
+      'plan-review:' || new.id || ':' || new.review_version
+    )
+    on conflict (dedupe_key) where dedupe_key is not null do nothing;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_plan_review on public.plans;
+create trigger trg_notify_plan_review after update on public.plans
+for each row execute function public.notify_on_plan_review();
 
 -- Tin nhắn: báo cho tất cả người trong luồng trừ người gửi.
 create or replace function public.notify_on_message()
@@ -861,6 +957,44 @@ drop trigger if exists trg_z_mark_late_result on public.reflections;
 create trigger trg_z_mark_late_result before update on public.reflections
 for each row execute function public.mark_late_result();
 
+-- ---------- Duyệt kế hoạch hàng loạt ----------
+-- Một lệnh thay vì 30 request từ trình duyệt. Chạy dưới quyền người gọi (không
+-- phải security definer) nên RLS và trigger tách cột vẫn được áp dụng nguyên vẹn:
+-- chỉ những kế hoạch thuộc lớp mà người gọi có quyền 'approve_plan' mới đổi được.
+create or replace function public.bulk_review_plans(
+  p_plan_ids uuid[],
+  p_status   text,
+  p_note     text default null
+) returns json language plpgsql set search_path = public as $$
+declare v_done int; v_ids uuid[];
+begin
+  if p_status not in ('Đã duyệt','Cần điều chỉnh','Chờ duyệt') then
+    raise exception 'Trạng thái duyệt không hợp lệ: %', p_status;
+  end if;
+
+  with updated as (
+    update public.plans
+       set review_status = p_status,
+           review_note   = nullif(trim(coalesce(p_note, '')), '')
+     where id = any(p_plan_ids)
+       and review_status is distinct from p_status
+       and public.staff_perm(class_id, 'approve_plan')
+    returning id
+  )
+  select count(*), coalesce(array_agg(id), '{}') into v_done, v_ids from updated;
+
+  return json_build_object(
+    'yeu_cau', coalesce(array_length(p_plan_ids, 1), 0),
+    'da_xu_ly', v_done,
+    'bo_qua', coalesce(array_length(p_plan_ids, 1), 0) - v_done,
+    'trang_thai', p_status
+  );
+end;
+$$;
+
+revoke all on function public.bulk_review_plans(uuid[], text, text) from public, anon;
+grant execute on function public.bulk_review_plans(uuid[], text, text) to authenticated;
+
 -- ---------- Lịch chạy tự động ----------
 -- pg_cron dùng giờ UTC. 12:00 UTC = 19:00 VN (sau giờ học), 01:00 UTC = 08:00 VN.
 -- Chạy 2 lần/ngày là đủ; hàm idempotent nên chạy thừa cũng vô hại.
@@ -980,8 +1114,8 @@ for select to authenticated using (public.staff_perm(class_id, 'view_plans'));
 -- và tự kiểm quyền review_device.
 create policy plans_staff_update on public.plans
 for update to authenticated
-using (public.staff_perm(class_id, 'review_device'))
-with check (public.staff_perm(class_id, 'review_device'));
+using (public.staff_perm(class_id, 'review_device') or public.staff_perm(class_id, 'approve_plan'))
+with check (public.staff_perm(class_id, 'review_device') or public.staff_perm(class_id, 'approve_plan'));
 
 -- PHẢN TƯ
 create policy reflections_student_select on public.reflections

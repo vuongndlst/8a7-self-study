@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, ClipboardCopy, Download, ExternalLink, KeyRound, LifeBuoy, MessageSquare, MessageSquareQuote, RefreshCw, Search, Shuffle, UsersRound, X } from 'lucide-react'
+﻿import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Check, ClipboardCheck, ClipboardCopy, Download, ExternalLink, KeyRound, LifeBuoy, MessageSquare, MessageSquareQuote, RefreshCw, Search, Shuffle, UsersRound, X } from 'lucide-react'
 import { supabase, callFunction } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, registrationStatus, todayISO } from '../utils/date'
@@ -23,7 +23,10 @@ export default function TeacherPage(){
   const [evidence,setEvidence]=useState({})
   const [loading,setLoading]=useState(true)
   const [view,setView]=useState('plans')
-  const [filters,setFilters]=useState({from:'',to:'',student:'',subject:'',completion:'',search:''})
+  const [filters,setFilters]=useState({from:'',to:'',student:'',subject:'',completion:'',search:'',review:'',progress:'',period:'',device:''})
+  const [selectedPlans,setSelectedPlans]=useState(new Set())
+  const [bulkAction,setBulkAction]=useState(null)
+  const [sortBy,setSortBy]=useState('date_desc')
   const [selected,setSelected]=useState(new Set())
   const [resetTargets,setResetTargets]=useState(null)
   const [taskTarget,setTaskTarget]=useState(null)
@@ -61,17 +64,44 @@ export default function TeacherPage(){
   useEffect(()=>{load()},[])
 
   const studentMap=useMemo(()=>Object.fromEntries(students.map(s=>[s.id,s])),[students])
-  const rows=useMemo(()=>plans.filter(p=>{
-    const s=studentMap[p.student_id];const r=reflections[p.id]
-    if(filters.from&&p.study_date<filters.from)return false
-    if(filters.to&&p.study_date>filters.to)return false
-    if(filters.student&&p.student_id!==filters.student)return false
-    if(filters.subject&&p.subject!==filters.subject)return false
-    if(filters.completion&&(r?.completion_status||'Chưa cập nhật')!==filters.completion)return false
-    const q=filters.search.trim().toLowerCase()
-    if(q&&!`${s?.full_name||''} ${s?.mshs||''} ${p.task} ${p.subject}`.toLowerCase().includes(q))return false
-    return true
-  }),[plans,filters,studentMap,reflections])
+  const rows=useMemo(()=>{
+    const list=plans.filter(p=>{
+      const s=studentMap[p.student_id];const r=reflections[p.id]
+      if(filters.from&&p.study_date<filters.from)return false
+      if(filters.to&&p.study_date>filters.to)return false
+      if(filters.student&&p.student_id!==filters.student)return false
+      if(filters.subject&&p.subject!==filters.subject)return false
+      if(filters.completion&&(r?.completion_status||'Chưa cập nhật')!==filters.completion)return false
+      if(filters.review&&p.review_status!==filters.review)return false
+      if(filters.progress&&status[p.id]?.progress!==filters.progress)return false
+      if(filters.period&&String(p.period)!==filters.period)return false
+      if(filters.device==='co'&&!p.use_device)return false
+      if(filters.device==='khong'&&p.use_device)return false
+      const q=filters.search.trim().toLowerCase()
+      if(q&&!`${s?.full_name||''} ${s?.mshs||''} ${p.task} ${p.subject}`.toLowerCase().includes(q))return false
+      return true
+    })
+    const name=(p)=>studentMap[p.student_id]?.full_name||''
+    const cmp={
+      date_desc:(a,b)=>b.study_date.localeCompare(a.study_date)||a.period-b.period,
+      date_asc:(a,b)=>a.study_date.localeCompare(b.study_date)||a.period-b.period,
+      created_desc:(a,b)=>b.created_at.localeCompare(a.created_at),
+      created_asc:(a,b)=>a.created_at.localeCompare(b.created_at),
+      student_asc:(a,b)=>name(a).localeCompare(name(b),'vi')||a.study_date.localeCompare(b.study_date),
+      student_desc:(a,b)=>name(b).localeCompare(name(a),'vi')||a.study_date.localeCompare(b.study_date),
+    }[sortBy]
+    return [...list].sort(cmp)
+  },[plans,filters,studentMap,reflections,status,sortBy])
+
+  // Chỉ những kế hoạch đang hiển thị VÀ chưa duyệt mới là mục tiêu hợp lệ.
+  const pendingInView=useMemo(()=>rows.filter(p=>p.review_status==='Chờ duyệt'),[rows])
+  const selectedList=useMemo(()=>rows.filter(p=>selectedPlans.has(p.id)),[rows,selectedPlans])
+  const togglePlan=(id)=>setSelectedPlans(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
+  const toggleAllPlans=()=>setSelectedPlans(prev=>
+    prev.size>=rows.length&&rows.length>0?new Set():new Set(rows.map(p=>p.id)))
+  const selectAllPending=()=>setSelectedPlans(new Set(pendingInView.map(p=>p.id)))
+  // Đổi bộ lọc thì bỏ chọn, tránh thao tác nhầm lên nhóm không còn nhìn thấy.
+  useEffect(()=>{setSelectedPlans(new Set())},[filters,sortBy])
 
   const stats=useMemo(()=>{
     const total=rows.length
@@ -81,6 +111,8 @@ export default function TeacherPage(){
       done:rows.filter(p=>reflections[p.id]?.completion_status==='Hoàn thành').length,
       help:rows.filter(p=>reflections[p.id]?.need_help&&!reflections[p.id]?.help_resolved).length,
       pendingDevices:rows.filter(p=>p.use_device&&p.device_status==='Chờ duyệt').length,
+      pendingReview:rows.filter(p=>p.review_status==='Chờ duyệt').length,
+      needsRevision:rows.filter(p=>p.review_status==='Cần điều chỉnh').length,
       lowRated:rows.filter(p=>(reflections[p.id]?.rating??5)<=2).length,
       unrated:rows.filter(p=>reflections[p.id]&&reflections[p.id].rating==null).length,
       avg:(()=>{
@@ -192,13 +224,29 @@ export default function TeacherPage(){
       </div>
     </section>
 
-    <section className="stats-grid">
+    {/* Hàng đầu là VIỆC CẦN XỬ LÝ — bấm vào là lọc thẳng xuống bảng bên dưới. */}
+    <section className="stats-grid inbox-grid">
+      <Stat label="Chờ duyệt" value={stats.pendingReview} alert={stats.pendingReview>0}
+            onClick={()=>{setView('plans');setFilters({...filters,review:'Chờ duyệt',progress:''})}}
+            active={filters.review==='Chờ duyệt'}/>
+      <Stat label="Cần điều chỉnh" value={stats.needsRevision} alert={stats.needsRevision>0}
+            onClick={()=>{setView('plans');setFilters({...filters,review:'Cần điều chỉnh',progress:''})}}
+            active={filters.review==='Cần điều chỉnh'}/>
+      <Stat label="Trễ hạn cập nhật" value={overdueCount} alert={overdueCount>0}
+            onClick={()=>{setView('plans');setFilters({...filters,review:'',progress:'Trễ hạn cập nhật'})}}
+            active={filters.progress==='Trễ hạn cập nhật'}/>
+      <Stat label="Chờ chấm sao" value={stats.unrated}
+            onClick={()=>{setView('plans');setFilters({...filters,review:'',progress:'Đã hoàn thành'})}}
+            active={filters.progress==='Đã hoàn thành'}/>
+      <Stat label="Cần hỗ trợ" value={stats.help} alert={stats.help>0}/>
+      <Stat label="Đã hoàn thành" value={stats.total?`${Math.round(stats.done/stats.total*100)}%`:'0%'}/>
+    </section>
+
+    <section className="stats-grid secondary-grid">
       <Stat label="Tài khoản HS" value={`${claimed}/${rosterTotal}`}/>
       <Stat label="Lượt đăng ký" value={stats.total}/>
       <Stat label="Đúng hạn" value={stats.total?`${Math.round(stats.ontime/stats.total*100)}%`:'0%'}/>
-      <Stat label="Hoàn thành" value={stats.total?`${Math.round(stats.done/stats.total*100)}%`:'0%'}/>
       <Stat label="Điểm trung bình" value={stats.avg!=null?`${stats.avg.toFixed(1)}/5`:'—'}/>
-      <Stat label="Cần hỗ trợ" value={stats.help} alert={stats.help>0}/>
     </section>
 
     <section className="teacher-meta-grid">
@@ -232,14 +280,46 @@ export default function TeacherPage(){
     {view==='assistants'&&<AssistantsPanel
       classId={context.classId} perStudent={perStudent} assistants={assistants} onChanged={load}/>}
 
-    {view==='plans'&&<section className="card filters">
+    {view==='plans'&&<section className="card filters filters-wide">
       <div className="search-box"><Search size={17}/><input value={filters.search} onChange={e=>setFilters({...filters,search:e.target.value})} placeholder="Tìm tên, MSHS, môn, nhiệm vụ…"/></div>
+      <select value={filters.review} onChange={e=>setFilters({...filters,review:e.target.value})} title="Trạng thái duyệt">
+        <option value="">Duyệt: tất cả</option><option>Chờ duyệt</option><option>Đã duyệt</option><option>Cần điều chỉnh</option></select>
+      <select value={filters.progress} onChange={e=>setFilters({...filters,progress:e.target.value})} title="Tiến độ cập nhật">
+        <option value="">Tiến độ: tất cả</option><option>Chưa tới buổi</option><option>Đang chờ cập nhật</option><option>Trễ hạn cập nhật</option><option>Đã hoàn thành</option><option>Hệ thống tự đánh giá</option></select>
       <input type="date" value={filters.from} onChange={e=>setFilters({...filters,from:e.target.value})} title="Từ ngày"/>
       <input type="date" value={filters.to} onChange={e=>setFilters({...filters,to:e.target.value})} title="Đến ngày"/>
       <select value={filters.student} onChange={e=>setFilters({...filters,student:e.target.value})}><option value="">Tất cả học sinh</option>{students.map(s=><option key={s.id} value={s.id}>{s.full_name}</option>)}</select>
       <select value={filters.subject} onChange={e=>setFilters({...filters,subject:e.target.value})}><option value="">Tất cả môn</option>{subjects.map(x=><option key={x}>{x}</option>)}</select>
-      <select value={filters.completion} onChange={e=>setFilters({...filters,completion:e.target.value})}><option value="">Tất cả kết quả</option><option>Hoàn thành</option><option>Một phần</option><option>Chưa hoàn thành</option><option>Chưa cập nhật</option></select>
+      <select value={filters.period} onChange={e=>setFilters({...filters,period:e.target.value})} title="Tiết">
+        <option value="">Tất cả tiết</option>{Array.from({length:9},(_,i)=>i+1).map(n=><option key={n} value={String(n)}>Tiết {n}</option>)}</select>
+      <select value={filters.device} onChange={e=>setFilters({...filters,device:e.target.value})} title="Thiết bị">
+        <option value="">Thiết bị: tất cả</option><option value="co">Có dùng</option><option value="khong">Không dùng</option></select>
+      <select value={sortBy} onChange={e=>setSortBy(e.target.value)} title="Sắp xếp">
+        <option value="date_desc">Ngày học: mới nhất</option><option value="date_asc">Ngày học: cũ nhất</option>
+        <option value="created_desc">Đăng ký: mới nhất</option><option value="created_asc">Đăng ký: cũ nhất</option>
+        <option value="student_asc">Học sinh A–Z</option><option value="student_desc">Học sinh Z–A</option></select>
+      {(filters.review||filters.progress||filters.period||filters.device||filters.subject||filters.student||filters.from||filters.to||filters.search)&&
+        <button className="button ghost" onClick={()=>setFilters({from:'',to:'',student:'',subject:'',completion:'',search:'',review:'',progress:'',period:'',device:''})}>Xóa bộ lọc</button>}
     </section>}
+
+    {view==='plans'&&<div className={`bulk-bar sticky ${selectedList.length?'on':''}`}>
+      <div>
+        {selectedList.length>0
+          ? <><strong>{selectedList.length}</strong> kế hoạch được chọn
+              {selectedList.length<pendingInView.length&&
+                <button className="link-button" onClick={selectAllPending}>Chọn tất cả {pendingInView.length} kế hoạch chờ duyệt đang hiển thị</button>}</>
+          : <span className="muted-text">Đang hiển thị <strong>{rows.length}</strong> kế hoạch · <strong>{pendingInView.length}</strong> chờ duyệt</span>}
+      </div>
+      <div className="button-row">
+        {selectedList.length===0&&pendingInView.length>0&&
+          <button className="button primary" onClick={selectAllPending}><ClipboardCheck size={17}/> Chọn {pendingInView.length} kế hoạch chờ duyệt</button>}
+        {selectedList.length>0&&<>
+          <button className="button ghost" onClick={()=>setSelectedPlans(new Set())}>Bỏ chọn</button>
+          <button className="button ghost danger" onClick={()=>setBulkAction('Cần điều chỉnh')}>Yêu cầu điều chỉnh</button>
+          <button className="button primary" onClick={()=>setBulkAction('Đã duyệt')}><Check size={17}/> Duyệt {selectedList.length} kế hoạch</button>
+        </>}
+      </div>
+    </div>}
 
     {view==='students'&&<section className="card bulk-bar">
       <div>
@@ -285,14 +365,25 @@ export default function TeacherPage(){
         </tr>)}</tbody>
       </table>{perStudent.length===0&&<div className="empty-state">Chưa có học sinh nào trong lớp.</div>}</div>
       :<div className="table-wrap"><table>
-        <thead><tr><th>Học sinh</th><th>Ngày / Tiết</th><th>Nội dung</th><th>Đăng ký</th><th>Kết quả</th><th>Thiết bị</th><th>Minh chứng</th><th>Thao tác</th></tr></thead>
+        <thead><tr>
+          <th className="pick"><input type="checkbox" title="Chọn tất cả đang hiển thị"
+            checked={rows.length>0&&selectedPlans.size>=rows.length}
+            ref={el=>{if(el)el.indeterminate=selectedPlans.size>0&&selectedPlans.size<rows.length}}
+            onChange={toggleAllPlans}/></th>
+          <th>Học sinh</th><th>Ngày / Tiết</th><th>Nội dung</th><th>Duyệt</th><th>Tiến độ</th><th>Thiết bị</th><th>Minh chứng</th><th>Thao tác</th>
+        </tr></thead>
         <tbody>{rows.map(p=>{
           const s=studentMap[p.student_id]||{};const r=reflections[p.id];const ev=evidence[p.id]||[]
-          return <tr key={p.id} className={ratingTone(r?.rating)}>
+          return <tr key={p.id} className={`${ratingTone(r?.rating)} ${selectedPlans.has(p.id)?'picked':''}`}>
+            <td className="pick"><input type="checkbox" checked={selectedPlans.has(p.id)} onChange={()=>togglePlan(p.id)}/></td>
             <td><strong>{s.full_name}</strong><small>{s.mshs}</small></td>
             <td>{formatDate(p.study_date)}<small>Tiết {p.period}</small></td>
             <td><button className="link-button task-link" onClick={()=>setTaskTarget({plan:p,student:s})}>{p.subject}</button><small title={p.task}>{p.task}</small></td>
-            <td><StatusBadge value={registrationStatus(p.study_date,p.created_at)}/></td>
+            <td>
+              <StatusBadge value={p.review_status}/>
+              {p.review_note&&<small title={p.review_note}>{p.review_note}</small>}
+              <small className="muted-text">{registrationStatus(p.study_date,p.created_at)}</small>
+            </td>
             <td>{r?<>
                 <StatusBadge value={r.completion_status}/>
                 {status[p.id]?.needs_recheck&&<small className="help-flag">↩ Bổ sung muộn — cần xem lại</small>}
@@ -315,6 +406,9 @@ export default function TeacherPage(){
       </table>{rows.length===0&&<div className="empty-state">Không có dữ liệu phù hợp bộ lọc.</div>}</div>}
     </section>}
 
+    {bulkAction&&<BulkReviewModal action={bulkAction} plans={selectedList} studentMap={studentMap}
+      onClose={()=>setBulkAction(null)}
+      onDone={()=>{setBulkAction(null);setSelectedPlans(new Set());load()}}/>}
     {resetTargets&&<ResetPasswordModal targets={resetTargets} onClose={()=>setResetTargets(null)} onDone={()=>{setSelected(new Set());load()}}/>}
     {taskTarget&&<TaskDetailModal plan={taskTarget.plan} student={taskTarget.student}
       reflection={reflections[taskTarget.plan.id]} evidence={evidence[taskTarget.plan.id]||[]}
@@ -333,12 +427,74 @@ export default function TeacherPage(){
   </div>
 }
 
+// Duyệt / trả về điều chỉnh cho nhiều kế hoạch trong MỘT lệnh gọi CSDL.
+function BulkReviewModal({action,plans,studentMap,onClose,onDone}){
+  const approve=action==='Đã duyệt'
+  const [note,setNote]=useState('')
+  const [busy,setBusy]=useState(false)
+  const [msg,setMsg]=useState('')
+  // Bỏ qua kế hoạch đã ở đúng trạng thái — nói rõ để thầy cô không hiểu nhầm phạm vi.
+  const eligible=plans.filter(p=>p.review_status!==action)
+  const skipped=plans.length-eligible.length
+
+  const run=async()=>{
+    if(!approve&&!note.trim())return setMsg('Hãy ghi ngắn gọn em cần điều chỉnh gì.')
+    setBusy(true);setMsg('')
+    const {data,error}=await supabase.rpc('bulk_review_plans',{
+      p_plan_ids:eligible.map(p=>p.id), p_status:action, p_note:approve?null:note.trim(),
+    })
+    setBusy(false)
+    if(error)return setMsg('Không thể lưu. '+(error.message||''))
+    const done=data?.da_xu_ly??0
+    window.alert(`✓ Đã ${approve?'duyệt':'gửi yêu cầu điều chỉnh cho'} ${done} kế hoạch. Học sinh liên quan đã nhận thông báo.`)
+    onDone()
+  }
+
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal" onMouseDown={e=>e.stopPropagation()}>
+    <div className="modal-head">
+      <div><span className="eyebrow">{approve?'DUYỆT KẾ HOẠCH':'YÊU CẦU ĐIỀU CHỈNH'}</span>
+        <h2>{eligible.length} kế hoạch</h2></div>
+      <button className="icon-button" onClick={onClose}>✕</button>
+    </div>
+
+    <div className="notice compact"><Check size={17}/><span>
+      {eligible.length} kế hoạch sẽ chuyển sang <strong>{action}</strong> và học sinh liên quan nhận được thông báo.
+      {skipped>0&&<> {skipped} kế hoạch đã ở trạng thái này nên được bỏ qua.</>}
+    </span></div>
+
+    <ul className="target-list">{eligible.slice(0,12).map(p=><li key={p.id}>
+      <strong>{studentMap[p.student_id]?.full_name||'—'}</strong>
+      <small>{formatDate(p.study_date)} · Tiết {p.period} · {p.subject}</small>
+    </li>)}
+    {eligible.length>12&&<li className="muted-text">… và {eligible.length-12} kế hoạch nữa</li>}</ul>
+
+    {!approve&&<>
+      <label>Em cần điều chỉnh gì? *</label>
+      <textarea rows="3" maxLength={500} value={note} onChange={e=>setNote(e.target.value)}
+                placeholder="Ví dụ: Nhiệm vụ còn chung chung, em ghi rõ làm bài nào, trang bao nhiêu."/>
+      <p className="muted-text small">Nội dung này gửi thẳng tới học sinh. Khi em sửa lại kế hoạch, nó tự quay về hàng chờ duyệt.</p>
+    </>}
+
+    {msg&&<div className="form-error">{msg}</div>}
+    <div className="form-actions">
+      <button className="button ghost" onClick={onClose}>Hủy</button>
+      <button className="button primary" onClick={run} disabled={busy||eligible.length===0}>
+        {busy?'Đang lưu…':approve?`Duyệt ${eligible.length} kế hoạch`:`Gửi yêu cầu cho ${eligible.length} kế hoạch`}
+      </button>
+    </div>
+  </div></div>
+}
+
 function downloadCsv(lines,filename){
   const blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'})
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;a.click();URL.revokeObjectURL(a.href)
 }
 
-function Stat({label,value,alert}){return <div className={`stat-card ${alert?'alert':''}`}><span>{label}</span><strong>{value}</strong></div>}
+function Stat({label,value,alert,onClick,active}){
+  const cls=`stat-card ${alert?'alert':''} ${onClick?'clickable':''} ${active?'active':''}`
+  if(!onClick)return <div className={cls}><span>{label}</span><strong>{value}</strong></div>
+  return <button type="button" className={cls} onClick={onClick}><span>{label}</span><strong>{value}</strong></button>
+}
 
 // Đặt lại mật khẩu cho 1 hoặc nhiều học sinh. Mật khẩu tạm sinh tự động và chỉ
 // hiện đúng một lần ở đây — hệ thống không lưu lại được bản đọc được.
@@ -435,6 +591,20 @@ function TaskDetailModal({plan,student,reflection,evidence,onOpenEvidence,onClos
   const [resolved,setResolved]=useState(reflection?.help_resolved||false)
   const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('')
 
+  const review=async(status)=>{
+    let note=null
+    if(status==='Cần điều chỉnh'){
+      note=window.prompt('Em cần điều chỉnh gì? (gửi thẳng tới học sinh)')
+      if(!note||!note.trim())return
+    }
+    setBusy(true);setMsg('')
+    const {data,error}=await supabase.rpc('bulk_review_plans',
+      {p_plan_ids:[plan.id],p_status:status,p_note:note?note.trim():null})
+    setBusy(false)
+    if(error||!data?.da_xu_ly)return setMsg('Không thể cập nhật trạng thái duyệt.')
+    onSaved()
+  }
+
   const save=async()=>{
     setBusy(true);setMsg('')
     const {error}=await supabase.from('reflections')
@@ -452,14 +622,24 @@ function TaskDetailModal({plan,student,reflection,evidence,onOpenEvidence,onClos
       <button className="icon-button" onClick={onClose}>✕</button>
     </div>
 
+    <div className="review-actions">
+      {plan.review_status!=='Đã duyệt'&&
+        <button className="button primary" onClick={()=>review('Đã duyệt')} disabled={busy}><Check size={16}/> Duyệt kế hoạch</button>}
+      {plan.review_status!=='Cần điều chỉnh'&&
+        <button className="button ghost danger" onClick={()=>review('Cần điều chỉnh')} disabled={busy}>Yêu cầu điều chỉnh</button>}
+      {plan.review_status==='Đã duyệt'&&<span className="muted-text small">Đã duyệt — có thể chấm sao và nhận xét bên dưới.</span>}
+    </div>
+
     <div className="detail-box">
       <strong>Nhiệm vụ</strong><p>{plan.task}</p>
       <strong>Mục tiêu</strong><p>{plan.goal}</p>
       <div className="detail-inline">
+        <span>Duyệt: <StatusBadge value={plan.review_status}/></span>
         <span>Ưu tiên: <StatusBadge value={plan.priority}/></span>
         <span>Đăng ký: <StatusBadge value={registrationStatus(plan.study_date,plan.created_at)}/></span>
         {plan.use_device&&<span>Thiết bị: <StatusBadge value={plan.device_status}/></span>}
       </div>
+      {plan.review_note&&<><strong>Yêu cầu điều chỉnh đã gửi</strong><p>{plan.review_note}</p></>}
       {plan.use_device&&plan.device_purpose&&<><strong>Mục đích thiết bị</strong><p>{plan.device_purpose}</p></>}
     </div>
 
@@ -563,6 +743,7 @@ const TA_PERMS=[
   ['can_rate','Chấm sao 1–5','Hệ thống ghi rõ ai chấm'],
   ['can_comment','Viết nhận xét','Gửi thẳng tới học sinh'],
   ['can_review_device','Duyệt đăng ký thiết bị','Đồng ý hoặc từ chối'],
+  ['can_approve_plan','Duyệt kế hoạch','Kể cả duyệt hàng loạt — hệ thống ghi rõ ai duyệt'],
 ]
 
 function AssistantsPanel({classId,perStudent,assistants,onChanged}){
