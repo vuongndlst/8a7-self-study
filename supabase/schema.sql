@@ -911,6 +911,19 @@ using (
   )
 );
 
+-- ---------- Index ----------
+-- Truy vấn hay dùng: theo lớp + ngày (dashboard giáo viên), theo học sinh + ngày
+-- (trang của em), lọc theo môn / thiết bị, và đếm thông báo chưa đọc.
+create index if not exists plans_class_date_idx    on public.plans (class_id, study_date desc);
+create index if not exists plans_student_date_idx  on public.plans (student_id, study_date desc);
+create index if not exists plans_subject_idx       on public.plans (subject);
+create index if not exists plans_device_idx        on public.plans (device_status) where use_device;
+create index if not exists reflections_student_idx on public.reflections (student_id);
+create index if not exists reflections_rating_idx  on public.reflections (rating) where rating is not null;
+create index if not exists evidence_plan_idx       on public.evidence (plan_id);
+create index if not exists notif_unread_idx        on public.notifications (user_id) where read_at is null;
+create index if not exists enrollments_class_idx   on public.enrollments (class_id) where is_active;
+
 -- ---------- Quyền cấp bảng ----------
 -- RLS là lớp chặn theo dòng. Grant là lớp thứ hai: thu hồi toàn bộ quyền mặc định
 -- của Supabase rồi trả lại đúng những verb thực sự cần.
