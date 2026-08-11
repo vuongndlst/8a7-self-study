@@ -80,6 +80,10 @@ export default function TeacherPage(){
       pendingDevices:rows.filter(p=>p.use_device&&p.device_status==='Chờ duyệt').length,
       lowRated:rows.filter(p=>(reflections[p.id]?.rating??5)<=2).length,
       unrated:rows.filter(p=>reflections[p.id]&&reflections[p.id].rating==null).length,
+      avg:(()=>{
+        const v=rows.map(p=>reflections[p.id]?.rating).filter(x=>x!=null)
+        return v.length?(v.reduce((a,b)=>a+b,0)/v.length):null
+      })(),
     }
   },[rows,reflections])
 
@@ -186,8 +190,7 @@ export default function TeacherPage(){
       <Stat label="Lượt đăng ký" value={stats.total}/>
       <Stat label="Đúng hạn" value={stats.total?`${Math.round(stats.ontime/stats.total*100)}%`:'0%'}/>
       <Stat label="Hoàn thành" value={stats.total?`${Math.round(stats.done/stats.total*100)}%`:'0%'}/>
-      <Stat label="Chưa chấm sao" value={stats.unrated}/>
-      <Stat label="Bị 1–2 sao" value={stats.lowRated} alert={stats.lowRated>0}/>
+      <Stat label="Điểm trung bình" value={stats.avg!=null?`${stats.avg.toFixed(1)}/5`:'—'}/>
       <Stat label="Cần hỗ trợ" value={stats.help} alert={stats.help>0}/>
     </section>
 
@@ -203,6 +206,8 @@ export default function TeacherPage(){
         <div className="insight-list">
           <div className="insight-row"><span>Chưa lập kế hoạch cho ngày mai</span><strong className={noPlanTomorrow.length?'help-flag':''}>{noPlanTomorrow.length}</strong></div>
           <div className="insight-row"><span>Có tiết chưa cập nhật kết quả</span><strong className={withPending.length?'help-flag':''}>{withPending.length}</strong></div>
+          <div className="insight-row"><span>Tiết chờ thầy cô chấm sao</span><strong className={stats.unrated?'help-flag':''}>{stats.unrated}</strong></div>
+          <div className="insight-row"><span>Tiết bị 1–2 sao</span><strong className={stats.lowRated?'alarm-red':''}>{stats.lowRated}</strong></div>
           <div className="insight-row"><span>Đang chờ tự đặt lại mật khẩu</span><strong>{mustChangeList.length}</strong></div>
         </div>
         {noPlanTomorrow.length>0&&<p className="muted-text small">{noPlanTomorrow.slice(0,8).map(r=>r.name).join(' · ')}{noPlanTomorrow.length>8?` … +${noPlanTomorrow.length-8}`:''}</p>}

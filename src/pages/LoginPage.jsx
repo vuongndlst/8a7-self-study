@@ -10,7 +10,9 @@ export default function LoginPage() {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [student, setStudent] = useState({ mshs: '', password: '' })
-  const [teacher, setTeacher] = useState({ email: import.meta.env.VITE_TEACHER_EMAIL || '', password: '' })
+  // Không điền sẵn email giáo viên: trang đăng nhập là trang công khai, và trình
+  // duyệt của thầy cô sẽ tự nhớ sau lần đăng nhập đầu tiên.
+  const [teacher, setTeacher] = useState({ email: '', password: '' })
 
   const loginStudent = async (e) => {
     e.preventDefault(); setBusy(true); setError(''); setNotice('')
@@ -60,16 +62,21 @@ export default function LoginPage() {
       <h2>Đăng nhập</h2>
       <p className="muted-text">Chọn đúng loại tài khoản để tiếp tục.</p>
 
-      {mode === 'student' ? <form onSubmit={loginStudent}>
-        <label>MSHS</label>
-        <input inputMode="numeric" pattern="[0-9]*" maxLength={7} value={student.mshs}
-               onChange={(e) => setStudent({ ...student, mshs: e.target.value })}
-               placeholder="2406002" autoComplete="username" required />
+      {/* key={mode} buộc React dựng lại form khi đổi tab. Nếu không, trình duyệt
+          giữ nguyên ô đã autofill và điền email/mật khẩu giáo viên vào ô MSHS. */}
+      {mode === 'student' ? <form key="student" onSubmit={loginStudent}>
+        <label htmlFor="login-mshs">MSHS</label>
+        {/* Không đặt autoComplete="username": trình duyệt sẽ coi đây là ô đăng nhập
+            chung và đổ email giáo viên đã lưu vào. Chỉ nhận chữ số. */}
+        <input id="login-mshs" name="mshs" inputMode="numeric" pattern="[0-9]*" maxLength={7}
+               value={student.mshs}
+               onChange={(e) => setStudent({ ...student, mshs: e.target.value.replace(/\D/g, '').slice(0, 7) })}
+               placeholder="2406002" autoComplete="off" autoCorrect="off" spellCheck={false} required />
         <small className="muted-text">Tài khoản gắn với email trường: <strong>{student.mshs || 'MSHS'}@{STUDENT_EMAIL_DOMAIN}</strong></small>
-        <label>Mật khẩu</label>
-        <input type="password" value={student.password}
+        <label htmlFor="login-student-pw">Mật khẩu</label>
+        <input id="login-student-pw" name="student-password" type="password" value={student.password}
                onChange={(e) => setStudent({ ...student, password: e.target.value })}
-               autoComplete="current-password" required />
+               autoComplete="off" required />
         {error && <div className="form-error">{error}</div>}
         {notice && <div className="notice"><span>{notice}</span></div>}
         <button className="button primary full large" disabled={busy}><KeyRound size={18} />{busy ? 'Đang đăng nhập…' : 'Đăng nhập học sinh'}</button>
@@ -77,11 +84,15 @@ export default function LoginPage() {
           Chưa có tài khoản? <Link to="/register">Đăng ký lần đầu</Link><br />
           <span>Quên mật khẩu? Báo giáo viên chủ nhiệm để nhận mật khẩu tạm, rồi em tự đặt lại.</span>
         </p>
-      </form> : <form onSubmit={loginTeacher}>
-        <label>Email giáo viên</label>
-        <input type="email" value={teacher.email} onChange={(e) => setTeacher({ ...teacher, email: e.target.value })} autoComplete="username" required />
-        <label>Mật khẩu</label>
-        <input type="password" value={teacher.password} onChange={(e) => setTeacher({ ...teacher, password: e.target.value })} autoComplete="current-password" required />
+      </form> : <form key="teacher" onSubmit={loginTeacher}>
+        <label htmlFor="login-teacher-email">Email giáo viên</label>
+        <input id="login-teacher-email" name="teacher-email" type="email" value={teacher.email}
+               onChange={(e) => setTeacher({ ...teacher, email: e.target.value })}
+               autoComplete="email" required />
+        <label htmlFor="login-teacher-pw">Mật khẩu</label>
+        <input id="login-teacher-pw" name="teacher-password" type="password" value={teacher.password}
+               onChange={(e) => setTeacher({ ...teacher, password: e.target.value })}
+               autoComplete="current-password" required />
         {error && <div className="form-error">{error}</div>}
         <button className="button primary full large" disabled={busy}><ShieldCheck size={18} />{busy ? 'Đang đăng nhập…' : 'Vào Teacher Dashboard'}</button>
       </form>}
