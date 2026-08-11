@@ -145,3 +145,8 @@ tr.alarm-amber td{background:rgba(160,97,10,.05)}
 .chip{font-size:12px;font-weight:650;padding:6px 11px;border-radius:999px;border:1px solid var(--line)}
 .chip.on{background:var(--mint);border-color:#c5e2d1;color:var(--green)}
 .chip.off{background:#f6f8f7;color:#a7b2ab;text-decoration:line-through}
+
+/* ---------- v4: hạn cập nhật kết quả ---------- */
+.plan-progress{margin-top:9px}
+.auto-tag{display:inline-block;margin-left:8px;font-size:11px;font-weight:700;color:var(--warn);background:var(--warn-bg);border:1px solid #efd7a1;border-radius:999px;padding:2px 8px;vertical-align:middle}
+td .auto-tag{display:block;margin:5px 0 0;width:max-content}

@@ -169,7 +169,63 @@ của TA khác, hay thấy dữ liệu lớp khác. Mọi lượt chấm sao / n
 
 Dashboard riêng của TA ở `#/ta`, chỉ hiện khi em được cử.
 
-## 7. Nhắc quá hạn — hiển thị trong ứng dụng
+## 7. Hạn cập nhật kết quả — tự động hóa
+
+Vòng lặp Plan → Do → **Update** → Reflect hay đứt ở bước 3: lúc audit có **7/9 kế hoạch
+đã qua ngày không bao giờ được cập nhật kết quả (78%)**. Hệ thống tự xử lý phần này.
+
+### Đồng hồ đếm hạn
+
+```text
+mốc bắt đầu = MUỘN HƠN giữa (lúc đăng ký) và (22:00 ngày tự học)
+trễ hạn      = mốc bắt đầu + 48 giờ
+tự đánh giá  = mốc bắt đầu + 120 giờ
+```
+
+Lấy mốc muộn hơn để em đăng ký trước 10 ngày **không** bị đánh trễ trước cả ngày học.
+Ba con số nằm ở bảng `app_settings`, đổi quy định thì sửa một dòng, không phải sửa code.
+
+### Trạng thái tiến độ
+
+Suy ra từ dữ liệu, không nhập tay — hàm `progress_status()` và view `plan_status`:
+
+| Trạng thái | Khi nào |
+|---|---|
+| Chưa tới buổi | Chưa tới mốc bắt đầu đếm |
+| Đang chờ cập nhật | Đã qua buổi, còn trong 48 giờ |
+| Trễ hạn cập nhật | Quá 48 giờ, chưa có kết quả |
+| Hệ thống tự đánh giá | Quá 120 giờ → tự ghi 1 sao |
+| Đã hoàn thành | Đã có kết quả |
+
+Giao diện đọc thẳng `plan_status` nên **không có chuyện frontend và CSDL lệch nhau**.
+
+### Job chạy nền
+
+`process_self_study_deadlines()` chạy bằng **pg_cron**, lịch `0 1,12 * * *` UTC
+= **08:00 và 19:00 giờ Việt Nam** mỗi ngày.
+
+- Quá 48 giờ → thông báo nhắc học sinh.
+- Quá 120 giờ → tạo bản tự đánh giá **1 sao** kèm một trong **10 phản hồi thiện chí**
+  (bảng `auto_feedback_templates`), chọn ngẫu nhiên **một lần** rồi lưu vào CSDL —
+  không random lại mỗi lần hiển thị.
+
+Hàm **idempotent**: chạy lại bao nhiêu lần cũng không sinh trùng, nhờ khóa
+`notifications.dedupe_key` (`task-overdue:<id>`, `task-auto-rating:<id>`) và điều kiện
+"chưa có phản tư".
+
+Chạy tay để kiểm tra:
+
+```sql
+select public.process_self_study_deadlines();
+```
+
+### Cập nhật bổ sung sau hạn
+
+Học sinh vẫn cập nhật được sau khi bị tự đánh giá. Khi đó hệ thống **giữ nguyên** lịch sử
+(`auto_evaluated`, `auto_evaluated_at`), đóng dấu `late_result_at` và bật `needs_recheck`
+để giáo viên thấy trên dashboard và chấm lại. Học sinh không tự xóa được các dấu này.
+
+## 8. Nhắc quá hạn — hiển thị trong ứng dụng
 
 Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên màn hình:
 
@@ -179,7 +235,7 @@ Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên
 - **Học sinh** — banner cảnh báo số tiết đã qua mà chưa cập nhật kết quả, và báo khi
   giáo viên có nhận xét mới.
 
-## 8. Deploy Edge Functions
+## 9. Deploy Edge Functions
 
 ```bash
 npx supabase login
@@ -197,7 +253,7 @@ npx supabase functions deploy student-change-password --no-verify-jwt
 | `teacher-reset-password` | giáo viên | đọc Bearer token, phải là teacher **và** phụ trách lớp của HS đó |
 | `student-change-password` | học sinh | phải là student, đúng mật khẩu hiện tại, đủ luật mật khẩu |
 
-## 9. Quyền dữ liệu
+## 10. Quyền dữ liệu
 
 **Học sinh** — chỉ đọc/ghi dữ liệu của chính mình; không đọc danh sách lớp; chỉ tạo kế
 hoạch cho hôm nay trở đi; chỉ sửa/xóa kế hoạch còn ở tương lai; chỉ nộp phản tư và minh
@@ -217,7 +273,7 @@ chặn được cột.
 > (`teaches_mshs`, `my_mshs`). Viết thẳng `exists (select … from enrollments)` trong policy
 > của `students` sẽ khiến Postgres báo `42P17 infinite recursion`.
 
-## 10. Cấu trúc
+## 11. Cấu trúc
 
 ```text
 src/

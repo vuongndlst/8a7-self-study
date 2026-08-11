@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CalendarPlus, ChevronDown, ExternalLink, FileUp, KeyRound, MessageSquare, MessageSquareQuote, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase, callFunction } from '../lib/supabase'
@@ -19,6 +19,7 @@ export default function StudentPage(){
   const [plans,setPlans]=useState([])
   const [reflections,setReflections]=useState({})
   const [evidence,setEvidence]=useState({})
+  const [status,setStatus]=useState({})
   const [form,setForm]=useState(emptyPlan)
   const [showForm,setShowForm]=useState(false)
   const [busy,setBusy]=useState(false)
@@ -34,13 +35,16 @@ export default function StudentPage(){
     setPlans(planList)
     if(planList.length){
       const ids=planList.map(x=>x.id)
-      const [{data:r},{data:e}]=await Promise.all([
+      const [{data:r},{data:e},{data:s}]=await Promise.all([
         supabase.from('reflections').select('*').in('plan_id',ids),
-        supabase.from('evidence').select('*').in('plan_id',ids).order('created_at',{ascending:true})
+        supabase.from('evidence').select('*').in('plan_id',ids).order('created_at',{ascending:true}),
+        // Trạng thái tiến độ do CSDL tính — giao diện không tự suy diễn để khỏi lệch.
+        supabase.from('plan_status').select('plan_id,progress,overdue_at,auto_evaluate_at').in('plan_id',ids)
       ])
       setReflections(Object.fromEntries((r||[]).map(x=>[x.plan_id,x])))
       const grouped={};(e||[]).forEach(x=>{(grouped[x.plan_id] ||= []).push(x)});setEvidence(grouped)
-    }else{setReflections({});setEvidence({})}
+      setStatus(Object.fromEntries((s||[]).map(x=>[x.plan_id,x])))
+    }else{setReflections({});setEvidence({});setStatus({})}
   }
   useEffect(()=>{load()},[])
 
@@ -77,6 +81,8 @@ export default function StudentPage(){
   const avgRating=rated.length?(rated.reduce((s,r)=>s+r.rating,0)/rated.length).toFixed(1):null
   // Tiết bị chấm 1–2 sao mà em chưa viết phản hồi điều chỉnh.
   const needsAck=plans.filter(p=>{const r=reflections[p.id];return r?.rating!=null&&r.rating<=2&&!r.student_ack_at})
+  const overdue=plans.filter(p=>status[p.id]?.progress==='Trễ hạn cập nhật')
+  const autoRated=plans.filter(p=>status[p.id]?.progress==='Hệ thống tự đánh giá')
 
   const openChat=async()=>{
     if(!context.classId)return
@@ -108,19 +114,25 @@ export default function StudentPage(){
     {needsAck.length>0&&<div className="notice danger"><AlertTriangle size={18}/><span>
       Có <strong>{needsAck.length} tiết</strong> bị đánh giá thấp và em <strong>chưa viết phản hồi</strong>. Mở thẻ có viền đỏ/vàng bên dưới, đọc nhận xét rồi ghi một dòng cho biết em sẽ điều chỉnh thế nào.
     </span></div>}
-    {pendingReflections>0&&<div className="notice warning"><ShieldCheck size={18}/><span>Em còn <strong>{pendingReflections} tiết</strong> đã qua mà chưa cập nhật kết quả. Mở thẻ ở mục “Lịch sử gần đây” để bổ sung.</span></div>}
+    {overdue.length>0&&<div className="notice danger"><AlertTriangle size={18}/><span>
+      <strong>{overdue.length} tiết đã quá hạn cập nhật kết quả.</strong> Nếu để quá 5 ngày, hệ thống sẽ tự ghi nhận 1 sao. Em bổ sung sớm giúp thầy cô theo dõi đúng tiến độ nhé.
+    </span></div>}
+    {autoRated.length>0&&<div className="notice warning"><AlertTriangle size={18}/><span>
+      <strong>{autoRated.length} tiết được hệ thống tự đánh giá</strong> do quá hạn cập nhật. Em vẫn có thể bổ sung kết quả — thầy cô sẽ xem lại và chấm lại.
+    </span></div>}
+    {pendingReflections>0&&overdue.length===0&&<div className="notice warning"><ShieldCheck size={18}/><span>Em còn <strong>{pendingReflections} tiết</strong> đã qua mà chưa cập nhật kết quả. Mở thẻ ở mục “Lịch sử gần đây” để bổ sung.</span></div>}
     {newComments>0&&<div className="notice"><MessageSquareQuote size={18}/><span>Giáo viên đã nhận xét <strong>{newComments}</strong> lần phản tư của em.</span></div>}
     {message&&<div className="notice"><ShieldCheck size={18}/><span>{message}</span></div>}
     {showForm&&<PlanForm form={form} setForm={setForm} onSubmit={submitPlan} busy={busy}/>}
 
     <section className="section-block">
       <div className="section-title"><div><h2>Sắp tới</h2><p>Các kế hoạch từ hôm nay trở đi. Kế hoạch tương lai có thể chỉnh sửa hoặc xóa.</p></div><button className="icon-button" onClick={load} title="Làm mới"><RefreshCw size={18}/></button></div>
-      {upcoming.length===0?<EmptyState text="Chưa có kế hoạch sắp tới."/>:<div className="plan-grid">{upcoming.map(p=><PlanCard key={p.id} plan={p} reflection={reflections[p.id]} evidence={evidence[p.id]||[]} onOpen={()=>setOpenPlan(p)} onChanged={load}/>)}</div>}
+      {upcoming.length===0?<EmptyState text="Chưa có kế hoạch sắp tới."/>:<div className="plan-grid">{upcoming.map(p=><PlanCard key={p.id} plan={p} reflection={reflections[p.id]} evidence={evidence[p.id]||[]} progress={status[p.id]} onOpen={()=>setOpenPlan(p)} onChanged={load}/>)}</div>}
     </section>
 
     <section className="section-block">
       <div className="section-title"><div><h2>Lịch sử gần đây</h2><p>Sau giờ tự học, cập nhật kết quả và minh chứng nếu có.</p></div></div>
-      {past.length===0?<EmptyState text="Chưa có lịch sử tự học."/>:<div className="plan-grid">{past.slice(0,15).map(p=><PlanCard key={p.id} plan={p} reflection={reflections[p.id]} evidence={evidence[p.id]||[]} onOpen={()=>setOpenPlan(p)} onChanged={load}/>)}</div>}
+      {past.length===0?<EmptyState text="Chưa có lịch sử tự học."/>:<div className="plan-grid">{past.slice(0,15).map(p=><PlanCard key={p.id} plan={p} reflection={reflections[p.id]} evidence={evidence[p.id]||[]} progress={status[p.id]} onOpen={()=>setOpenPlan(p)} onChanged={load}/>)}</div>}
     </section>
 
     {openPlan&&(openPlan.study_date>todayISO()
@@ -166,8 +178,8 @@ function PlanForm({form,setForm,onSubmit,busy}){
   </form>
 }
 
-function PlanCard({plan,reflection,evidence,onOpen,onChanged}){
-  const status=registrationStatus(plan.study_date,plan.created_at)
+function PlanCard({plan,reflection,evidence,progress,onOpen,onChanged}){
+  const regStatus=registrationStatus(plan.study_date,plan.created_at)
   const editable=plan.study_date>todayISO()
   const remove=async(e)=>{
     e.stopPropagation()
@@ -183,13 +195,16 @@ function PlanCard({plan,reflection,evidence,onOpen,onChanged}){
     <div className="plan-card-top">
       <span className="date-chip">{formatDate(plan.study_date)} · Tiết {plan.period}</span>
       <span className="plan-card-actions">
-        <StatusBadge value={status}/>
+        <StatusBadge value={regStatus}/>
         {editable&&<button type="button" className="icon-button danger" title="Xóa kế hoạch" onClick={remove}><Trash2 size={15}/></button>}
       </span>
     </div>
     <h3>{plan.subject}</h3><p>{plan.task}</p>
     <div className="plan-meta"><span>Ưu tiên: <StatusBadge value={plan.priority}/></span><DeviceBadge plan={plan}/></div>
-    {reflection?.rating!=null&&<div className="plan-rating"><RatingStars value={reflection.rating} readOnly size={15}/></div>}
+    {reflection?.rating!=null&&<div className="plan-rating"><RatingStars value={reflection.rating} readOnly size={15}/>
+      {reflection.auto_evaluated&&<small className="auto-tag">hệ thống tự đánh giá</small>}</div>}
+    {progress?.progress&&progress.progress!=='Chưa tới buổi'&&status.progress!=='Đã hoàn thành'
+      &&<div className="plan-progress"><StatusBadge value={progress.progress}/></div>}
     {needsAck&&<div className="ack-warning"><AlertTriangle size={14}/><span>Em cần viết phản hồi cho tiết này</span></div>}
     {reflection?.teacher_comment&&<div className="teacher-comment"><MessageSquareQuote size={14}/><span>{reflection.teacher_comment}</span></div>}
     <div className="plan-footer">
@@ -298,8 +313,12 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
     <div className="detail-box"><strong>Nhiệm vụ</strong><p>{plan.task}</p><strong>Mục tiêu</strong><p>{plan.goal}</p></div>
     {plan.use_device&&<div className="detail-box"><strong>Đăng ký thiết bị điện tử</strong><p><StatusBadge value={plan.device_status}/> {plan.device_review_note?`— ${plan.device_review_note}`:''}</p></div>}
 
+    {existing?.auto_evaluated&&<div className="detail-box alarm-amber">
+      <strong>Hệ thống đã tự đánh giá tiết này</strong>
+      <p className="muted-text small">Kế hoạch quá hạn cập nhật kết quả nên hệ thống ghi nhận 1 sao. Em vẫn cập nhật bổ sung được — thầy cô sẽ xem lại và chấm lại.</p>
+    </div>}
     {existing?.rating!=null&&<div className={`detail-box rating-box ${ratingTone(existing.rating)}`}>
-      <strong>Giáo viên đánh giá</strong>
+      <strong>{existing.auto_evaluated?'Đánh giá hiện tại':'Giáo viên đánh giá'}</strong>
       <p><RatingStars value={existing.rating} readOnly/> — {ratingLabel(existing.rating)}</p>
     </div>}
     {existing?.teacher_comment&&<div className="detail-box highlight"><strong>Nhận xét của giáo viên</strong><p>{existing.teacher_comment}</p></div>}

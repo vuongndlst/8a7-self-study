@@ -141,6 +141,13 @@ create table if not exists public.reflections (
   constraint help_note_required check (not need_help or nullif(trim(help_note),'') is not null)
 );
 
+-- v4: đánh dấu bản ghi do hệ thống tự sinh khi học sinh không cập nhật kết quả.
+alter table public.reflections add column if not exists auto_evaluated boolean not null default false;
+alter table public.reflections add column if not exists auto_evaluated_at timestamptz;
+-- Học sinh cập nhật bổ sung SAU khi đã bị tự đánh giá → giáo viên cần xem lại.
+alter table public.reflections add column if not exists late_result_at timestamptz;
+alter table public.reflections add column if not exists needs_recheck boolean not null default false;
+
 -- v3: chấm sao 1–5 và phần học sinh phải phản hồi khi bị đánh giá thấp.
 alter table public.reflections add column if not exists rating smallint;
 alter table public.reflections add column if not exists rating_by uuid references public.profiles(id) on delete set null;
@@ -215,6 +222,53 @@ create table if not exists public.notifications (
 );
 
 create index if not exists notifications_user_idx on public.notifications (user_id, created_at desc);
+
+-- Mở rộng loại thông báo cho phần tự động (nhắc trễ hạn, tự đánh giá).
+do $$ begin
+  alter table public.notifications drop constraint if exists notifications_kind_check;
+  alter table public.notifications add constraint notifications_kind_check
+    check (kind in ('rating','comment','message','device','system','overdue','auto_rating','late_result'));
+exception when others then null; end $$;
+
+-- Khóa chống trùng: mỗi sự kiện chỉ sinh đúng một thông báo, dù job chạy lại
+-- bao nhiêu lần. Ví dụ 'task-overdue:<plan_id>'.
+alter table public.notifications add column if not exists dedupe_key text;
+create unique index if not exists notifications_dedupe_idx
+  on public.notifications (dedupe_key) where dedupe_key is not null;
+
+-- ---------- Cấu hình hạn cập nhật kết quả ----------
+-- Để ở bảng thay vì hằng số trong code: nhà trường đổi quy định thì sửa một dòng.
+create table if not exists public.app_settings (
+  key text primary key,
+  value_int integer,
+  note text,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.app_settings (key, value_int, note) values
+  ('overdue_hours', 48,  'Sau bao nhiêu giờ kể từ khi hết buổi tự học mà chưa cập nhật kết quả thì coi là trễ hạn'),
+  ('auto_rating_hours', 120, 'Sau bao nhiêu giờ thì hệ thống tự đánh giá 1 sao'),
+  ('period_end_hour', 22, 'Giờ (theo giờ VN) coi như kết thúc buổi tự học trong ngày — mốc bắt đầu đếm hạn')
+on conflict (key) do nothing;
+
+-- 10 mẫu phản hồi thiện chí dùng khi hệ thống tự đánh giá.
+create table if not exists public.auto_feedback_templates (
+  id smallint primary key,
+  body text not null
+);
+
+insert into public.auto_feedback_templates (id, body) values
+ (1,'Thầy/cô chưa nhận được phần cập nhật kết quả của kế hoạch này. Em nhớ cập nhật sau mỗi giờ tự học để việc theo dõi tiến độ của mình được đầy đủ hơn nhé.'),
+ (2,'Kế hoạch đã qua thời hạn cập nhật kết quả. Lần tới em hãy dành vài phút sau giờ tự học để ghi lại những gì mình đã hoàn thành nhé.'),
+ (3,'Em đã có bước lập kế hoạch, nhưng phần kết quả vẫn chưa được cập nhật. Hãy cố gắng hoàn thành cả hai bước để việc tự học hiệu quả hơn nhé.'),
+ (4,'Thầy/cô chưa thấy kết quả thực hiện của kế hoạch này. Việc cập nhật kết quả sẽ giúp em nhìn lại tiến độ và điều chỉnh cách học cho những lần tiếp theo.'),
+ (5,'Kế hoạch này chưa có thông tin kết quả sau thời gian quy định. Em hãy lưu ý cập nhật sớm hơn ở những lần tự học tiếp theo nhé.'),
+ (6,'Việc tự học sẽ hiệu quả hơn khi em vừa lập kế hoạch vừa nhìn lại kết quả. Lần tới em nhớ hoàn thành phần cập nhật sau giờ học nhé.'),
+ (7,'Em chưa cập nhật kết quả cho kế hoạch này đúng thời gian. Hãy tạo thói quen ghi lại tiến độ ngay sau khi hoàn thành giờ tự học nhé.'),
+ (8,'Thầy/cô chưa có đủ thông tin để ghi nhận kết quả của kế hoạch này. Em hãy chú ý hoàn thành phần cập nhật trong những lần tiếp theo nhé.'),
+ (9,'Kế hoạch đã được đăng ký nhưng chưa có phần tổng kết kết quả. Lần tới em hãy dành một vài phút để hoàn thiện bước cuối của quá trình tự học nhé.'),
+ (10,'Một kế hoạch tự học tốt cần có cả mục tiêu và kết quả. Em hãy cố gắng cập nhật đầy đủ hơn để theo dõi sự tiến bộ của chính mình nhé.')
+on conflict (id) do update set body = excluded.body;
 
 -- ---------- Hàm tiện ích ----------
 create or replace function public.vn_today()
@@ -479,6 +533,11 @@ begin
     new.rating             := old.rating;
     new.rating_by          := old.rating_by;
     new.rating_at          := old.rating_at;
+    -- Dấu vết hệ thống: học sinh không tự đặt được.
+    new.auto_evaluated     := old.auto_evaluated;
+    new.auto_evaluated_at  := old.auto_evaluated_at;
+    new.late_result_at     := old.late_result_at;
+    new.needs_recheck      := old.needs_recheck;
     -- Phản hồi khi bị đánh giá thấp: chỉ ghi được khi thực sự có sao 1–2.
     if new.student_ack_note is distinct from old.student_ack_note then
       if coalesce(old.rating, 5) > 2 then
@@ -498,6 +557,10 @@ begin
     new.completed_at      := old.completed_at;
     new.student_ack_note  := old.student_ack_note;
     new.student_ack_at    := old.student_ack_at;
+    new.auto_evaluated    := old.auto_evaluated;
+    new.auto_evaluated_at := old.auto_evaluated_at;
+    new.late_result_at    := old.late_result_at;
+    -- Giáo viên được tắt cờ "cần xem lại" sau khi đã chấm lại.
 
     -- Nhận xét: giáo viên luôn được; trợ giảng phải được bật quyền.
     if new.teacher_comment is distinct from old.teacher_comment then
@@ -540,6 +603,68 @@ $$;
 drop trigger if exists trg_reflections_guard_columns on public.reflections;
 create trigger trg_reflections_guard_columns before update on public.reflections
 for each row execute function public.reflections_guard_columns();
+
+-- ---------- Đồng hồ đếm hạn cập nhật kết quả ----------
+-- Mốc bắt đầu đếm = MUỘN HƠN giữa (lúc đăng ký) và (lúc kết thúc buổi tự học).
+-- Nhờ vậy em đăng ký trước 10 ngày cũng không bị đánh trễ trước cả ngày học.
+create or replace function public.result_clock_start(p_study_date date, p_created_at timestamptz)
+returns timestamptz language sql stable set search_path = public as $$
+  select greatest(
+    p_created_at,
+    (p_study_date::text || ' ' || lpad(coalesce((select value_int from public.app_settings where key='period_end_hour'), 22)::text, 2, '0') || ':00:00')
+      ::timestamp at time zone 'Asia/Ho_Chi_Minh'
+  );
+$$;
+
+-- Trạng thái tiến độ, suy ra từ dữ liệu chứ không nhập tay.
+--   Chưa tới buổi · Đang làm · Trễ hạn cập nhật · Đã hoàn thành · Hệ thống tự đánh giá
+create or replace function public.progress_status(
+  p_study_date date, p_created_at timestamptz,
+  p_has_result boolean, p_auto boolean
+) returns text language sql stable set search_path = public as $$
+  select case
+    when p_auto then 'Hệ thống tự đánh giá'
+    when p_has_result then 'Đã hoàn thành'
+    when now() < public.result_clock_start(p_study_date, p_created_at) then 'Chưa tới buổi'
+    when now() < public.result_clock_start(p_study_date, p_created_at)
+         + make_interval(hours => coalesce((select value_int from public.app_settings where key='overdue_hours'), 48))
+      then 'Đang chờ cập nhật'
+    else 'Trễ hạn cập nhật'
+  end;
+$$;
+
+grant execute on function public.result_clock_start(date, timestamptz),
+                          public.progress_status(date, timestamptz, boolean, boolean) to authenticated;
+
+-- View gộp sẵn để giao diện và analytics dùng chung MỘT định nghĩa trạng thái.
+drop view if exists public.plan_status;
+create view public.plan_status with (security_invoker = true) as
+select
+  p.id as plan_id,
+  p.student_id,
+  p.class_id,
+  p.study_date,
+  p.period,
+  p.subject,
+  p.created_at,
+  public.result_clock_start(p.study_date, p.created_at) as clock_start,
+  public.result_clock_start(p.study_date, p.created_at)
+    + make_interval(hours => coalesce((select value_int from public.app_settings where key='overdue_hours'), 48)) as overdue_at,
+  public.result_clock_start(p.study_date, p.created_at)
+    + make_interval(hours => coalesce((select value_int from public.app_settings where key='auto_rating_hours'), 120)) as auto_evaluate_at,
+  (r.plan_id is not null) as has_result,
+  coalesce(r.auto_evaluated, false) as auto_evaluated,
+  public.progress_status(p.study_date, p.created_at, r.plan_id is not null, coalesce(r.auto_evaluated, false)) as progress,
+  r.rating,
+  r.needs_recheck,
+  -- Đăng ký trước bao lâu (giờ) — dùng cho thống kê thói quen lập kế hoạch.
+  round(extract(epoch from (
+    (p.study_date::text || ' 00:00:00')::timestamp at time zone 'Asia/Ho_Chi_Minh' - p.created_at
+  )) / 3600.0, 1) as lead_time_hours
+from public.plans p
+left join public.reflections r on r.plan_id = p.id;
+
+grant select on public.plan_status to authenticated;
 
 -- ---------- Thông báo tự sinh ----------
 -- Sinh ở CSDL chứ không ở frontend: không thể bỏ qua, và không thể giả mạo.
@@ -635,6 +760,122 @@ $$;
 drop trigger if exists trg_notify_message on public.messages;
 create trigger trg_notify_message after insert on public.messages
 for each row execute function public.notify_on_message();
+
+-- ---------- Tự động xử lý hạn cập nhật kết quả ----------
+-- Chạy định kỳ bằng pg_cron. PHẢI idempotent: chạy lại 100 lần vẫn ra cùng kết quả,
+-- nhờ khóa dedupe_key trên notifications và điều kiện "chưa có phản tư".
+create or replace function public.process_self_study_deadlines()
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_overdue int := 0;
+  v_auto    int := 0;
+  r record;
+  v_body text;
+begin
+  -- 1) Quá 48 giờ mà chưa cập nhật kết quả → nhắc học sinh (mỗi kế hoạch một lần).
+  for r in
+    select ps.plan_id, ps.student_id, ps.study_date, ps.period, ps.subject
+    from public.plan_status ps
+    where not ps.has_result
+      and now() >= ps.overdue_at
+      and now() <  ps.auto_evaluate_at
+  loop
+    insert into public.notifications (user_id, kind, title, body, plan_id, dedupe_key)
+    values (
+      r.student_id, 'overdue',
+      'Đừng quên cập nhật kết quả',
+      'Em chưa cập nhật kết quả cho nhiệm vụ ' || r.subject || ' ngày '
+        || to_char(r.study_date, 'DD/MM') || ' · Tiết ' || r.period
+        || '. Hãy dành một chút thời gian ghi lại những gì em đã hoàn thành nhé.',
+      r.plan_id, 'task-overdue:' || r.plan_id
+    )
+    on conflict (dedupe_key) where dedupe_key is not null do nothing;
+    if found then v_overdue := v_overdue + 1; end if;
+  end loop;
+
+  -- 2) Quá 120 giờ mà vẫn chưa cập nhật → hệ thống tự đánh giá 1 sao kèm phản hồi.
+  for r in
+    select ps.plan_id, ps.student_id, ps.study_date, ps.period, ps.subject
+    from public.plan_status ps
+    where not ps.has_result
+      and now() >= ps.auto_evaluate_at
+  loop
+    -- Chọn ngẫu nhiên MỘT LẦN rồi lưu vào CSDL, không random lại mỗi lần hiển thị.
+    select body into v_body from public.auto_feedback_templates order by random() limit 1;
+
+    insert into public.reflections (
+      plan_id, student_id, completion_status, note,
+      rating, rating_at, teacher_comment, teacher_comment_at,
+      auto_evaluated, auto_evaluated_at
+    ) values (
+      r.plan_id, r.student_id, 'Chưa hoàn thành', null,
+      1, now(), v_body, now(),
+      true, now()
+    )
+    on conflict (plan_id) do nothing;
+
+    if found then
+      v_auto := v_auto + 1;
+      insert into public.notifications (user_id, kind, title, body, plan_id, dedupe_key)
+      values (
+        r.student_id, 'auto_rating',
+        'Nhiệm vụ ' || r.subject || ' ngày ' || to_char(r.study_date, 'DD/MM') || ' được đánh giá 1/5',
+        v_body,
+        r.plan_id, 'task-auto-rating:' || r.plan_id
+      )
+      on conflict (dedupe_key) where dedupe_key is not null do nothing;
+    end if;
+  end loop;
+
+  return json_build_object(
+    'chay_luc', timezone('Asia/Ho_Chi_Minh', now())::text,
+    'nhac_tre_han', v_overdue,
+    'tu_danh_gia', v_auto
+  );
+end;
+$$;
+
+revoke all on function public.process_self_study_deadlines() from public, anon, authenticated;
+
+-- Học sinh cập nhật bổ sung SAU khi đã bị tự đánh giá:
+-- giữ nguyên lịch sử tự đánh giá, đánh dấu để giáo viên xem lại và chấm lại.
+create or replace function public.mark_late_result()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.auto_evaluated
+     and auth.uid() = old.student_id
+     and (new.completion_status is distinct from old.completion_status
+          or new.note is distinct from old.note) then
+    new.late_result_at := now();
+    new.needs_recheck  := true;
+  end if;
+  return new;
+end;
+$$;
+
+-- Tên bắt đầu bằng "z" để chạy SAU trg_reflections_guard_columns (Postgres gọi
+-- trigger cùng loại theo thứ tự tên). Guard xóa các cột học sinh không được đặt,
+-- rồi hàm này mới đóng dấu hợp lệ.
+drop trigger if exists trg_mark_late_result on public.reflections;
+drop trigger if exists trg_z_mark_late_result on public.reflections;
+create trigger trg_z_mark_late_result before update on public.reflections
+for each row execute function public.mark_late_result();
+
+-- ---------- Lịch chạy tự động ----------
+-- pg_cron dùng giờ UTC. 12:00 UTC = 19:00 VN (sau giờ học), 01:00 UTC = 08:00 VN.
+-- Chạy 2 lần/ngày là đủ; hàm idempotent nên chạy thừa cũng vô hại.
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule('self-study-deadlines')
+      where exists (select 1 from cron.job where jobname = 'self-study-deadlines');
+    perform cron.schedule(
+      'self-study-deadlines',
+      '0 1,12 * * *',
+      $job$ select public.process_self_study_deadlines(); $job$
+    );
+  end if;
+end $$;
 
 -- ---------- RLS ----------
 alter table public.school_years       enable row level security;
@@ -949,5 +1190,17 @@ grant insert on public.conversations to authenticated;
 grant insert on public.messages to authenticated;                            -- không sửa/xóa tin đã gửi
 grant insert, update on public.conversation_reads to authenticated;
 grant update on public.notifications to authenticated;                       -- chỉ để đánh dấu đã đọc
+
+-- Cấu hình hạn: ai đăng nhập cũng đọc được (giao diện cần hiện "còn N giờ"),
+-- nhưng chỉ sửa được bằng service role.
+alter table public.app_settings enable row level security;
+drop policy if exists app_settings_read on public.app_settings;
+create policy app_settings_read on public.app_settings for select to authenticated using (true);
+revoke all on public.app_settings from anon, authenticated;
+grant select on public.app_settings to authenticated;
+
+-- Kho mẫu phản hồi tự động: không cần lộ ra client.
+alter table public.auto_feedback_templates enable row level security;
+revoke all on public.auto_feedback_templates from anon, authenticated;
 
 -- Danh sách lớp được nạp riêng bằng supabase/seed-roster.private.sql

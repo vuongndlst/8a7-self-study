@@ -30,6 +30,7 @@ export default function TeacherPage(){
   const [studentDetail,setStudentDetail]=useState(null)
   const [chatWith,setChatWith]=useState(null)
   const [assistants,setAssistants]=useState([])
+  const [status,setStatus]=useState({})
 
   const load=async()=>{
     setLoading(true)
@@ -37,8 +38,10 @@ export default function TeacherPage(){
       supabase.from('profiles').select('id,mshs,full_name,created_at,must_change_password').eq('role','student').order('full_name'),
       supabase.from('enrollments').select('mshs,is_active,students!inner(mshs,full_name,claimed_user_id)').eq('is_active',true),
       supabase.from('plans').select('*').order('study_date',{ascending:false}).order('period'),
-      supabase.from('class_assistants').select('*')
+      supabase.from('class_assistants').select('*'),
     ])
+    const {data:st}=await supabase.from('plan_status').select('plan_id,progress,overdue_at,needs_recheck,auto_evaluated')
+    setStatus(Object.fromEntries((st||[]).map(x=>[x.plan_id,x])))
     const studentList=s||[];const planList=p||[]
     setStudents(studentList)
     setRoster((enr||[]).map(e=>e.students).sort((a,b)=>a.full_name.localeCompare(b.full_name,'vi')))
@@ -131,6 +134,10 @@ export default function TeacherPage(){
   const noPlanTomorrow=perStudent.filter(r=>r.hasAccount&&!r.plannedTomorrow)
   const withPending=perStudent.filter(r=>r.pending>0)
   const mustChangeList=perStudent.filter(r=>r.mustChange)
+  // Trạng thái do CSDL tính (hạn 48h / tự đánh giá 120h).
+  const overdueCount=rows.filter(p=>status[p.id]?.progress==='Trễ hạn cập nhật').length
+  const autoRatedCount=rows.filter(p=>status[p.id]?.auto_evaluated).length
+  const recheckCount=rows.filter(p=>status[p.id]?.needs_recheck).length
 
   const selectedRows=perStudent.filter(r=>selected.has(r.mshs)&&r.hasAccount)
   const toggle=(mshs)=>setSelected(prev=>{const n=new Set(prev);n.has(mshs)?n.delete(mshs):n.add(mshs);return n})
@@ -206,8 +213,10 @@ export default function TeacherPage(){
         <div className="insight-list">
           <div className="insight-row"><span>Chưa lập kế hoạch cho ngày mai</span><strong className={noPlanTomorrow.length?'help-flag':''}>{noPlanTomorrow.length}</strong></div>
           <div className="insight-row"><span>Có tiết chưa cập nhật kết quả</span><strong className={withPending.length?'help-flag':''}>{withPending.length}</strong></div>
+          <div className="insight-row"><span>Trễ hạn cập nhật (quá 48 giờ)</span><strong className={overdueCount?'alarm-red':''}>{overdueCount}</strong></div>
+          <div className="insight-row"><span>Hệ thống đã tự đánh giá 1 sao</span><strong className={autoRatedCount?'alarm-red':''}>{autoRatedCount}</strong></div>
+          <div className="insight-row"><span>Học sinh bổ sung muộn — cần xem lại</span><strong className={recheckCount?'help-flag':''}>{recheckCount}</strong></div>
           <div className="insight-row"><span>Tiết chờ thầy cô chấm sao</span><strong className={stats.unrated?'help-flag':''}>{stats.unrated}</strong></div>
-          <div className="insight-row"><span>Tiết bị 1–2 sao</span><strong className={stats.lowRated?'alarm-red':''}>{stats.lowRated}</strong></div>
           <div className="insight-row"><span>Đang chờ tự đặt lại mật khẩu</span><strong>{mustChangeList.length}</strong></div>
         </div>
         {noPlanTomorrow.length>0&&<p className="muted-text small">{noPlanTomorrow.slice(0,8).map(r=>r.name).join(' · ')}{noPlanTomorrow.length>8?` … +${noPlanTomorrow.length-8}`:''}</p>}
@@ -286,10 +295,13 @@ export default function TeacherPage(){
             <td><StatusBadge value={registrationStatus(p.study_date,p.created_at)}/></td>
             <td>{r?<>
                 <StatusBadge value={r.completion_status}/>
+                {status[p.id]?.needs_recheck&&<small className="help-flag">↩ Bổ sung muộn — cần xem lại</small>}
+                {r.auto_evaluated&&<small className="auto-tag">hệ thống tự đánh giá</small>}
                 {r.rating!=null&&<RatingStars value={r.rating} readOnly size={13}/>}
                 {r.need_help&&!r.help_resolved&&<small className="help-flag">⚠ Cần hỗ trợ: {r.help_note||''}</small>}
                 {r.teacher_comment&&<small className="teacher-comment-mini">💬 {r.teacher_comment}</small>}
-              </>:<span className="muted-text">Chưa cập nhật</span>}</td>
+              </>:<><span className="muted-text">Chưa cập nhật</span>
+                    {status[p.id]?.progress==='Trễ hạn cập nhật'&&<small className="help-flag">⏱ Trễ hạn cập nhật</small>}</>}</td>
             <td>{p.use_device?<div className="device-cell">
                 <span title={p.device_purpose}>💻</span> <StatusBadge value={p.device_status}/>
                 {p.device_status==='Chờ duyệt'&&<span className="device-actions">
