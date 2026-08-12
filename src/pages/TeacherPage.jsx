@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Check, ClipboardCheck, ClipboardCopy, Download, ExternalLink, KeyRound, LifeBuoy, MessageSquare, MessageSquareQuote, RefreshCw, Search, Shuffle, UsersRound, X } from 'lucide-react'
 import { supabase, callFunction } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -28,7 +28,7 @@ export default function TeacherPage(){
   const [evidence,setEvidence]=useState({})
   const [loading,setLoading]=useState(true)
   const [view,setView]=useState('plans')
-  const [filters,setFilters]=useState({from:'',to:'',student:'',subject:'',completion:'',search:'',review:'',progress:'',period:'',device:''})
+  const [filters,setFilters]=useState({from:'',to:'',student:'',subject:'',completion:'',search:'',review:'',progress:'',period:'',device:'',rating:''})
   const [selectedPlans,setSelectedPlans]=useState(new Set())
   const [bulkAction,setBulkAction]=useState(null)
   const [sortBy,setSortBy]=useState('date_desc')
@@ -83,6 +83,11 @@ export default function TeacherPage(){
       if(filters.period&&String(p.period)!==filters.period)return false
       if(filters.device==='co'&&!p.use_device)return false
       if(filters.device==='khong'&&p.use_device)return false
+      // Chờ chấm = ĐÃ có kết quả nhưng CHƯA có sao. Đã chấm = có sao thầy cô cho.
+      if(filters.rating==='cho_cham'&&!(r&&r.rating==null))return false
+      if(filters.rating==='da_cham'&&!(r&&r.rating!=null&&!r.auto_evaluated))return false
+      if(filters.rating==='sao_thap'&&!(r&&r.rating!=null&&r.rating<=2))return false
+      if(filters.rating==='tu_dong'&&!r?.auto_evaluated)return false
       const q=filters.search.trim().toLowerCase()
       if(q&&!`${s?.full_name||''} ${s?.mshs||''} ${p.task} ${p.subject}`.toLowerCase().includes(q))return false
       return true
@@ -131,6 +136,7 @@ export default function TeacherPage(){
       needsRevision:rows.filter(p=>p.review_status==='Cần điều chỉnh').length,
       lowRated:rows.filter(p=>(reflections[p.id]?.rating??5)<=2).length,
       unrated:rows.filter(p=>reflections[p.id]&&reflections[p.id].rating==null).length,
+      rated:rows.filter(p=>{const r=reflections[p.id];return r&&r.rating!=null&&!r.auto_evaluated}).length,
       avg:(()=>{
         const v=rows.map(p=>reflections[p.id]?.rating).filter(x=>x!=null)
         return v.length?(v.reduce((a,b)=>a+b,0)/v.length):null
@@ -253,9 +259,11 @@ export default function TeacherPage(){
       <Stat label="Trễ hạn cập nhật" value={overdueCount} alert={overdueCount>0}
             onClick={()=>{setView('plans');setFilters({...filters,review:'',progress:'Trễ hạn cập nhật'})}}
             active={filters.progress==='Trễ hạn cập nhật'}/>
-      <Stat label="Chờ chấm sao" value={stats.unrated}
-            onClick={()=>{setView('plans');setFilters({...filters,review:'',progress:'Đã hoàn thành'})}}
-            active={filters.progress==='Đã hoàn thành'}/>
+      {/* Bấm vào là lọc ĐÚNG những tiết em đã nộp kết quả mà chưa được chấm sao,
+          không phải mọi tiết đã hoàn thành. */}
+      <Stat label="Chờ chấm sao" value={stats.unrated} alert={stats.unrated>0}
+            onClick={()=>{setView('plans');setFilters({...filters,review:'',progress:'',rating:'cho_cham'})}}
+            active={filters.rating==='cho_cham'}/>
       <Stat label="Cần hỗ trợ" value={stats.help} alert={stats.help>0}/>
       <Stat label="Đã hoàn thành" value={stats.total?`${Math.round(stats.done/stats.total*100)}%`:'0%'}/>
     </section>
@@ -263,6 +271,9 @@ export default function TeacherPage(){
     <section className="stats-grid secondary-grid">
       <Stat label="Tài khoản HS" value={`${claimed}/${rosterTotal}`}/>
       <Stat label="Lượt đăng ký" value={stats.total}/>
+      <Stat label="Đã chấm sao" value={stats.rated}
+            onClick={()=>{setView('plans');setFilters({...filters,review:'',progress:'',rating:'da_cham'})}}
+            active={filters.rating==='da_cham'}/>
       <Stat label="Đúng hạn" value={stats.total?`${Math.round(stats.ontime/stats.total*100)}%`:'0%'}/>
       <Stat label="Điểm trung bình" value={stats.avg!=null?`${stats.avg.toFixed(1)}/5`:'—'}/>
     </section>
@@ -316,7 +327,13 @@ export default function TeacherPage(){
       <button className={`chip-btn ${filters.device==='co'?'on':''}`}
         onClick={()=>setFilters({...filters,device:'co',review:'',progress:''})}>Có dùng thiết bị</button>
       <button className={`chip-btn ${filters.progress==='Trễ hạn cập nhật'?'on':''}`}
-        onClick={()=>setFilters({...filters,progress:'Trễ hạn cập nhật',review:'',device:''})}>Trễ hạn cập nhật</button>
+        onClick={()=>setFilters({...filters,progress:'Trễ hạn cập nhật',review:'',device:'',rating:''})}>Trễ hạn cập nhật</button>
+      <button className={`chip-btn ${filters.rating==='cho_cham'?'on':''}`}
+        onClick={()=>setFilters({...filters,rating:'cho_cham',review:'',progress:'',device:''})}>Chờ chấm sao</button>
+      <button className={`chip-btn ${filters.rating==='da_cham'?'on':''}`}
+        onClick={()=>setFilters({...filters,rating:'da_cham',review:'',progress:'',device:''})}>Đã chấm</button>
+      <button className={`chip-btn ${filters.rating==='sao_thap'?'on':''}`}
+        onClick={()=>setFilters({...filters,rating:'sao_thap',review:'',progress:'',device:''})}>Bị 1–2 sao</button>
     </div>}
 
     {view==='plans'&&<section className="card filters filters-wide">
@@ -333,12 +350,18 @@ export default function TeacherPage(){
         <option value="">Tất cả tiết</option>{Array.from({length:9},(_,i)=>i+1).map(n=><option key={n} value={String(n)}>Tiết {n}</option>)}</select>
       <select value={filters.device} onChange={e=>setFilters({...filters,device:e.target.value})} title="Thiết bị">
         <option value="">Thiết bị: tất cả</option><option value="co">Có dùng</option><option value="khong">Không dùng</option></select>
+      <select value={filters.rating} onChange={e=>setFilters({...filters,rating:e.target.value})} title="Trạng thái chấm sao">
+        <option value="">Chấm sao: tất cả</option>
+        <option value="cho_cham">Chờ chấm sao</option>
+        <option value="da_cham">Thầy cô đã chấm</option>
+        <option value="sao_thap">Bị 1–2 sao</option>
+        <option value="tu_dong">Hệ thống tự đánh giá</option></select>
       <select value={sortBy} onChange={e=>setSortBy(e.target.value)} title="Sắp xếp">
         <option value="date_desc">Ngày học: mới nhất</option><option value="date_asc">Ngày học: cũ nhất</option>
         <option value="created_desc">Đăng ký: mới nhất</option><option value="created_asc">Đăng ký: cũ nhất</option>
         <option value="student_asc">Học sinh A–Z</option><option value="student_desc">Học sinh Z–A</option></select>
-      {(filters.review||filters.progress||filters.period||filters.device||filters.subject||filters.student||filters.from||filters.to||filters.search)&&
-        <button className="button ghost" onClick={()=>setFilters({from:'',to:'',student:'',subject:'',completion:'',search:'',review:'',progress:'',period:'',device:''})}>Xóa bộ lọc</button>}
+      {(filters.review||filters.progress||filters.period||filters.device||filters.rating||filters.subject||filters.student||filters.from||filters.to||filters.search)&&
+        <button className="button ghost" onClick={()=>setFilters({from:'',to:'',student:'',subject:'',completion:'',search:'',review:'',progress:'',period:'',device:'',rating:''})}>Xóa bộ lọc</button>}
     </section>}
 
     {view==='plans'&&<div className={`bulk-bar sticky ${selectedList.length?'on':''}`}>
@@ -433,7 +456,11 @@ export default function TeacherPage(){
                 <StatusBadge value={r.completion_status}/>
                 {status[p.id]?.needs_recheck&&<small className="help-flag">↩ Bổ sung muộn — cần xem lại</small>}
                 {r.auto_evaluated&&<small className="auto-tag">hệ thống tự đánh giá</small>}
-                {r.rating!=null&&<RatingStars value={r.rating} readOnly size={13}/>}
+                {/* Đã nộp kết quả mà chưa có sao thì nói thẳng là đang chờ thầy cô,
+                    để không lẫn với tiết đã chấm xong. */}
+                {r.rating!=null
+                  ? <RatingStars value={r.rating} readOnly size={13}/>
+                  : <small className="pill-todo">⏳ chờ chấm sao</small>}
                 {r.need_help&&!r.help_resolved&&<small className="help-flag">⚠ Cần hỗ trợ: {r.help_note||''}</small>}
                 {r.teacher_comment&&<small className="teacher-comment-mini">💬 {r.teacher_comment}</small>}
               </>:<><span className="muted-text">Chưa cập nhật</span>

@@ -1,8 +1,8 @@
-﻿import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CalendarPlus, ChevronDown, ExternalLink, FileUp, KeyRound, MessageSquare, MessageSquareQuote, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, CalendarPlus, ChevronDown, ExternalLink, FileUp, KeyRound, MessageSquare, MessageSquareQuote, Plus, RefreshCw, Search, ShieldCheck, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase, callFunction } from '../lib/supabase'
-import { daysUntil, formatDate, registrationStatus, todayISO } from '../utils/date'
+import { formatDate, registrationStatus, todayISO } from '../utils/date'
 import { passwordChecks, validateStudentPassword } from '../utils/password'
 import StatusBadge from '../components/StatusBadge'
 import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
@@ -15,7 +15,7 @@ const activityOptions=['Bài tập cá nhân','Ôn tập','Công việc nhóm','
 const subjectOptions=['Toán','Ngữ văn','Tiếng Anh','Khoa học tự nhiên','Lịch sử & Địa lý','GDCD','Tin học','Công nghệ','Nghệ thuật','Khác']
 const priorityOptions=['Cao','Trung bình','Thấp']
 const fallbackOptions=['Làm nhiệm vụ tiếp theo','Ôn tập','Đọc sách','Chuẩn bị nội dung chia sẻ']
-const emptyPlan={study_date:'',period:'1',activity_type:'Bài tập cá nhân',subject:'Toán',task:'',priority:'Trung bình',goal:'',use_device:false,device_purpose:'',fallback_activity:'Làm nhiệm vụ tiếp theo'}
+const SESSIONS_PER_PAGE=6
 
 export default function StudentPage(){
   const {profile,context}=useAuth()
@@ -23,15 +23,17 @@ export default function StudentPage(){
   const [reflections,setReflections]=useState({})
   const [evidence,setEvidence]=useState({})
   const [status,setStatus]=useState({})
-  const [form,setForm]=useState(emptyPlan)
   const [showForm,setShowForm]=useState(false)
-  const [busy,setBusy]=useState(false)
   const [message,setMessage]=useState('')
   const [openPlan,setOpenPlan]=useState(null)
   const [showPassword,setShowPassword]=useState(false)
   const [showChat,setShowChat]=useState(false)
   const [conversationId,setConversationId]=useState(null)
   const [showAvatar,setShowAvatar]=useState(false)
+  const [filter,setFilter]=useState('tat_ca')
+  const [sortBy,setSortBy]=useState('moi_nhat')
+  const [search,setSearch]=useState('')
+  const [page,setPage]=useState(1)
 
   const load=async()=>{
     if(!profile?.id)return
@@ -56,26 +58,6 @@ export default function StudentPage(){
   }
   useEffect(()=>{load()},[profile?.id])
 
-  const submitPlan=async(e)=>{
-    e.preventDefault();setMessage('')
-    if(!form.study_date)return setMessage('Hãy chọn ngày tự học.')
-    if(form.use_device&&!form.device_purpose.trim())return setMessage('Hãy ghi rõ mục đích sử dụng thiết bị.')
-    setBusy(true)
-    // class_id do trigger phía CSDL gán theo lớp của em trong năm hiện hành.
-    const payload={...form,period:Number(form.period),student_id:profile.id,
-      device_purpose:form.use_device?form.device_purpose.trim():null,
-      device_status:form.use_device?'Chờ duyệt':'Không dùng'}
-    const {error}=await supabase.from('plans').insert(payload)
-    setBusy(false)
-    if(error){
-      if(error.code==='23505')setMessage('Em đã có kế hoạch cho ngày và tiết này.')
-      else if(/ghi danh/i.test(error.message||''))setMessage('Tài khoản của em chưa được ghi danh vào lớp nào của năm học này. Hãy báo giáo viên.')
-      else setMessage('Không thể lưu kế hoạch. Hãy kiểm tra thông tin và thử lại.')
-      return
-    }
-    setForm(emptyPlan);setShowForm(false);setMessage('✓ Đã lưu kế hoạch tự học.');load()
-  }
-
   // Gom nhiệm vụ theo BUỔI: một buổi có thể có nhiều nhiệm vụ.
   const sessions=useMemo(()=>{
     const m=new Map()
@@ -90,9 +72,12 @@ export default function StudentPage(){
   },[plans])
   const upcoming=useMemo(()=>sessions.filter(s=>s.study_date>=todayISO()),[sessions])
   const past=useMemo(()=>sessions.filter(s=>s.study_date<todayISO()),[sessions])
+  // Buổi đã qua mà còn nhiệm vụ chưa có kết quả — đây là việc em cần làm NGAY,
+  // nên tách hẳn ra một mục riêng ở trên thay vì để lẫn trong danh sách dài.
+  const todo=useMemo(()=>past.filter(s=>s.tasks.some(t=>!reflections[t.id])),[past,reflections])
+  const todoKeys=useMemo(()=>new Set(todo.map(s=>s.key)),[todo])
   const onTimeCount=plans.filter(p=>registrationStatus(p.study_date,p.created_at)==='Đúng hạn').length
   const completedCount=Object.values(reflections).filter(r=>r.completion_status==='Hoàn thành').length
-  const evidenceCount=Object.values(evidence).reduce((sum,list)=>sum+list.length,0)
   const onTimeRate=plans.length?Math.round(onTimeCount/plans.length*100):0
   // Nhiệm vụ (không phải buổi) đã qua mà chưa cập nhật kết quả.
   const pendingReflections=past.reduce((n,s)=>n+s.tasks.filter(t=>!reflections[t.id]).length,0)
@@ -103,6 +88,34 @@ export default function StudentPage(){
   const needsAck=plans.filter(p=>{const r=reflections[p.id];return r?.rating!=null&&r.rating<=2&&!r.student_ack_at})
   const overdue=plans.filter(p=>status[p.id]?.progress==='Trễ hạn cập nhật')
   const autoRated=plans.filter(p=>status[p.id]?.progress==='Hệ thống tự đánh giá')
+
+  // Danh sách chính: lọc + sắp xếp + phân trang, thay cho hai khối cứng cũ.
+  const filtered=useMemo(()=>{
+    const q=search.trim().toLowerCase()
+    const list=sessions.filter(s=>{
+      if(filter==='sap_toi'&&s.study_date<todayISO())return false
+      if(filter==='chua_ket_qua'&&!todoKeys.has(s.key))return false
+      if(filter==='da_xong'&&!(s.study_date<todayISO()&&s.tasks.every(t=>reflections[t.id])))return false
+      if(filter==='can_phan_hoi'&&!s.tasks.some(t=>{const r=reflections[t.id];return r?.rating!=null&&r.rating<=2&&!r.student_ack_at}))return false
+      if(q&&!s.tasks.some(t=>`${t.subject} ${t.subject_other||''} ${t.task} ${t.goal||''}`.toLowerCase().includes(q)))return false
+      return true
+    })
+    const cmp={
+      moi_nhat:(a,b)=>b.study_date.localeCompare(a.study_date)||a.period-b.period,
+      cu_nhat:(a,b)=>a.study_date.localeCompare(b.study_date)||a.period-b.period,
+      sap_toi_truoc:(a,b)=>{
+        const t=todayISO()
+        const fa=a.study_date>=t?0:1, fb=b.study_date>=t?0:1
+        return fa-fb||(fa===0?a.study_date.localeCompare(b.study_date):b.study_date.localeCompare(a.study_date))||a.period-b.period
+      },
+    }[sortBy]
+    return [...list].sort(cmp)
+  },[sessions,filter,sortBy,search,reflections,todoKeys])
+
+  const totalPages=Math.max(1,Math.ceil(filtered.length/SESSIONS_PER_PAGE))
+  const pageSessions=useMemo(()=>filtered.slice((page-1)*SESSIONS_PER_PAGE,page*SESSIONS_PER_PAGE),[filtered,page])
+  // Đổi bộ lọc thì quay về trang 1, nếu không em bấm lọc xong lại thấy trang trống.
+  useEffect(()=>{setPage(1)},[filter,sortBy,search])
 
   const openChat=async()=>{
     if(!context.classId)return
@@ -153,14 +166,51 @@ export default function StudentPage(){
       onCancel={()=>setShowForm(false)}
       onDone={()=>{setShowForm(false);setMessage('✓ Đã đăng ký buổi tự học.');load()}}/>}
 
-    <section className="section-block">
-      <div className="section-title"><div><h2>Sắp tới</h2><p>Các kế hoạch từ hôm nay trở đi. Kế hoạch tương lai có thể chỉnh sửa hoặc xóa.</p></div><button className="icon-button" onClick={load} title="Làm mới"><RefreshCw size={18}/></button></div>
-      {upcoming.length===0?<EmptyState text="Chưa có buổi tự học sắp tới."/>:<div className="plan-grid">{upcoming.map(s=><SessionCard key={s.key} session={s} reflections={reflections} evidence={evidence} status={status} onOpen={setOpenPlan} onChanged={load}/>)}</div>}
-    </section>
+    {/* Việc cần làm ngay đứng riêng ở trên. Không trộn vào danh sách chung vì
+        đây là thứ duy nhất em phải xử lý hôm nay. */}
+    {todo.length>0&&<section className="section-block">
+      <div className="section-title"><div>
+        <h2 className="title-alert"><AlertTriangle size={19}/> Cần cập nhật kết quả</h2>
+        <p>{todo.reduce((n,s)=>n+s.tasks.filter(t=>!reflections[t.id]).length,0)} nhiệm vụ đã qua mà em chưa ghi kết quả. Làm xong phần này trước nhé.</p>
+      </div></div>
+      <div className="plan-grid">{todo.map(s=><SessionCard key={s.key} session={s} reflections={reflections} evidence={evidence} status={status} onOpen={setOpenPlan} onChanged={load}/>)}</div>
+    </section>}
 
     <section className="section-block">
-      <div className="section-title"><div><h2>Lịch sử gần đây</h2><p>Sau giờ tự học, cập nhật kết quả và minh chứng nếu có.</p></div></div>
-      {past.length===0?<EmptyState text="Chưa có lịch sử tự học."/>:<div className="plan-grid">{past.slice(0,15).map(s=><SessionCard key={s.key} session={s} reflections={reflections} evidence={evidence} status={status} onOpen={setOpenPlan} onChanged={load}/>)}</div>}
+      <div className="section-title"><div>
+        <h2>Nhiệm vụ của em</h2>
+        <p>Tất cả buổi tự học đã đăng ký. Buổi trong tương lai có thể sửa hoặc xóa.</p>
+      </div><button className="icon-button" onClick={load} title="Làm mới"><RefreshCw size={18}/></button></div>
+
+      <div className="quick-views">
+        <FilterChip value="tat_ca"       now={filter} set={setFilter} label="Tất cả"          n={sessions.length}/>
+        <FilterChip value="sap_toi"      now={filter} set={setFilter} label="Sắp tới"         n={upcoming.length}/>
+        <FilterChip value="chua_ket_qua" now={filter} set={setFilter} label="Chưa có kết quả" n={todo.length} alert/>
+        <FilterChip value="da_xong"      now={filter} set={setFilter} label="Đã xong"         n={past.length-todo.length}/>
+        <FilterChip value="can_phan_hoi" now={filter} set={setFilter} label="Cần viết phản hồi" n={needsAck.length} alert/>
+      </div>
+
+      <div className="card filters">
+        <div className="search-box"><Search size={17}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo môn hoặc nội dung nhiệm vụ…"/></div>
+        <select value={sortBy} onChange={e=>setSortBy(e.target.value)}>
+          <option value="moi_nhat">Ngày học: mới nhất trước</option>
+          <option value="cu_nhat">Ngày học: cũ nhất trước</option>
+          <option value="sap_toi_truoc">Sắp tới trước, rồi đến đã qua</option>
+        </select>
+      </div>
+
+      {filtered.length===0
+        ? <EmptyState text={sessions.length===0?'Em chưa đăng ký buổi tự học nào.':'Không có buổi nào phù hợp với bộ lọc.'}/>
+        : <>
+            <div className="plan-grid">{pageSessions.map(s=><SessionCard key={s.key} session={s}
+              reflections={reflections} evidence={evidence} status={status} onOpen={setOpenPlan} onChanged={load}/>)}</div>
+            {filtered.length>SESSIONS_PER_PAGE&&<div className="pager">
+              <button className="button ghost" disabled={page===1} onClick={()=>setPage(p=>p-1)}>← Trước</button>
+              <span>Trang <strong>{page}</strong> / {totalPages} · {filtered.length} buổi</span>
+              <button className="button ghost" disabled={page===totalPages} onClick={()=>setPage(p=>p+1)}>Sau →</button>
+            </div>}
+          </>}
     </section>
 
     {/* Số liệu đặt CUỐI trang: việc cần làm (đăng ký, cập nhật kết quả) phải
@@ -183,33 +233,11 @@ export default function StudentPage(){
 
 function Stat({label,value}){return <div className="stat-card"><span>{label}</span><strong>{value}</strong></div>}
 
-function DeviceBadge({plan}){
-  if(!plan.use_device)return <span>Không thiết bị</span>
-  const map={'Chờ duyệt':'Thiết bị: chờ duyệt','Đã duyệt':'Thiết bị: đã duyệt','Từ chối':'Thiết bị: bị từ chối'}
-  return <StatusBadge value={plan.device_status} label={map[plan.device_status]||'Thiết bị'}/>
+function FilterChip({value,now,set,label,n,alert}){
+  return <button type="button" className={`chip-btn ${now===value?'on':''} ${alert&&n>0?'alert':''}`}
+                 onClick={()=>set(value)}>{label} <b>{n}</b></button>
 }
 
-function PlanForm({form,setForm,onSubmit,busy}){
-  const update=(k,v)=>setForm({...form,[k]:v});const days=daysUntil(form.study_date)
-  return <form className="card plan-form" onSubmit={onSubmit}>
-    <div className="section-title"><div><h2>Đăng ký kế hoạch mới</h2><p>Chọn đúng ngày và tiết tự học. Hệ thống tự ghi thời điểm đăng ký.</p></div></div>
-    <div className="form-grid three">
-      <div><label>Ngày tự học *</label><input type="date" min={todayISO()} value={form.study_date} onChange={e=>update('study_date',e.target.value)} required/>{form.study_date&&<small className={days<=0?'text-warning':'text-success'}>{days<=0?'Đăng ký trong ngày sẽ được đánh dấu trễ.':days===1?'Còn 1 ngày — vẫn đúng hạn.':`Còn ${days} ngày — đăng ký đúng hạn.`}</small>}</div>
-      <div><label>Tiết *</label><select value={form.period} onChange={e=>update('period',e.target.value)}>{Array.from({length:9},(_,i)=>i+1).map(n=><option key={n} value={n}>Tiết {n}</option>)}</select></div>
-      <div><label>Mức ưu tiên *</label><select value={form.priority} onChange={e=>update('priority',e.target.value)}>{priorityOptions.map(x=><option key={x}>{x}</option>)}</select></div>
-    </div>
-    <div className="form-grid two">
-      <div><label>Loại hoạt động *</label><select value={form.activity_type} onChange={e=>update('activity_type',e.target.value)}>{activityOptions.map(x=><option key={x}>{x}</option>)}</select></div>
-      <div><label>Môn / nội dung *</label><select value={form.subject} onChange={e=>update('subject',e.target.value)}>{subjectOptions.map(x=><option key={x}>{x}</option>)}</select></div>
-    </div>
-    <label>Nhiệm vụ cụ thể *</label><textarea rows="3" maxLength={1000} value={form.task} onChange={e=>update('task',e.target.value)} placeholder="Ví dụ: Hoàn thành bài 5–10 trang 24." required/>
-    <label>Mục tiêu cuối tiết *</label><textarea rows="2" maxLength={1000} value={form.goal} onChange={e=>update('goal',e.target.value)} placeholder="Ví dụ: Hoàn thành đủ 6 bài và tự kiểm tra lại đáp án." required/>
-    <div className="toggle-row"><label className="switch"><input type="checkbox" checked={form.use_device} onChange={e=>update('use_device',e.target.checked)}/><span/></label><div><strong>Sử dụng thiết bị điện tử</strong><small>Cần đăng ký trước ít nhất 1 ngày, ghi đúng mục đích và <strong>chờ giáo viên duyệt</strong>.</small></div></div>
-    {form.use_device&&<div><label>Mục đích sử dụng thiết bị *</label><input maxLength={500} value={form.device_purpose} onChange={e=>update('device_purpose',e.target.value)} placeholder="Ví dụ: Truy cập tài liệu bài tập trên Canvas." required/></div>}
-    <label>Nếu hoàn thành sớm</label><select value={form.fallback_activity} onChange={e=>update('fallback_activity',e.target.value)}>{fallbackOptions.map(x=><option key={x}>{x}</option>)}</select>
-    <div className="form-actions"><button type="button" className="button ghost" onClick={()=>setForm(emptyPlan)}>Làm lại</button><button className="button primary" disabled={busy}>{busy?'Đang lưu…':'Đăng ký kế hoạch'}</button></div>
-  </form>
-}
 
 // Một thẻ = một BUỔI tự học, bên trong liệt kê các nhiệm vụ của buổi đó.
 function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
@@ -233,10 +261,14 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
     onChanged()
   }
 
-  return <article className={`card session-card ${tone}`}>
+  // Buổi đã qua mà còn nhiệm vụ chưa có kết quả thì cả thẻ được làm nổi bật.
+  const needsResult=!editable&&pending>0
+
+  return <article className={`card session-card ${tone} ${needsResult?'needs-result':''}`}>
     <div className="plan-card-top">
       <span className="date-chip">{formatDate(study_date)} · Tiết {period}</span>
       <span className="plan-card-actions">
+        {needsResult&&<span className="pill-todo">Chưa có kết quả</span>}
         <StatusBadge value={regStatus}/>
         {editable&&<button type="button" className="icon-button danger" title="Xóa cả buổi" onClick={removeSession}><Trash2 size={15}/></button>}
       </span>
@@ -244,15 +276,17 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
 
     <div className="session-meta">
       <strong>{tasks.length} nhiệm vụ</strong>
-      <span className="muted-text">· đã cập nhật {done}/{tasks.length}</span>
+      <span className={needsResult?'help-flag':'muted-text'}>· đã cập nhật {done}/{tasks.length}</span>
       {late>0&&<span className="help-flag">· {late} trễ hạn</span>}
     </div>
     {needsAck&&<div className="ack-warning"><AlertTriangle size={14}/><span>Có nhiệm vụ em cần viết phản hồi</span></div>}
 
     <ul className="session-tasks">{tasks.map(t=>{
       const r=reflections[t.id];const st=status[t.id];const ev=evidence[t.id]||[]
-      return <li key={t.id}>
-        <button type="button" className={`task-row ${ratingTone(r?.rating)}`} onClick={()=>onOpen(t)}>
+      // Nhiệm vụ đã qua ngày mà chưa có kết quả: đây là dòng em phải xử lý.
+      const taskTodo=!editable&&!r
+      return <li key={t.id} className={taskTodo?'task-todo':''}>
+        <button type="button" className={`task-row ${ratingTone(r?.rating)} ${taskTodo?'todo':''}`} onClick={()=>onOpen(t)}>
           <span className="task-row-main">
             <strong>{t.subject==='Khác'&&t.subject_other?t.subject_other:t.subject}</strong>
             <small>{t.task}</small>
@@ -285,42 +319,6 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
     {!editable&&pending>0&&<p className="session-cta-hint">
       Còn <strong>{pending}</strong> nhiệm vụ chưa có kết quả. Cập nhật sớm để thầy cô theo dõi đúng tiến độ nhé.
     </p>}
-  </article>
-}
-
-function PlanCard({plan,reflection,evidence,progress,onOpen,onChanged}){
-  const regStatus=registrationStatus(plan.study_date,plan.created_at)
-  const editable=plan.study_date>todayISO()
-  const remove=async(e)=>{
-    e.stopPropagation()
-    if(!window.confirm(`Xóa kế hoạch ngày ${formatDate(plan.study_date)} tiết ${plan.period}?`))return
-    const {error}=await supabase.from('plans').delete().eq('id',plan.id)
-    if(error)window.alert('Không thể xóa kế hoạch này.')
-    onChanged()
-  }
-  // Viền đỏ khi bị 1 sao, viền vàng khi 2 sao — để em nhìn thấy ngay trong danh sách.
-  const tone=ratingTone(reflection?.rating)
-  const needsAck=reflection?.rating!=null&&reflection.rating<=2&&!reflection.student_ack_at
-  return <article className={`card plan-card ${tone}`} onClick={onOpen}>
-    <div className="plan-card-top">
-      <span className="date-chip">{formatDate(plan.study_date)} · Tiết {plan.period}</span>
-      <span className="plan-card-actions">
-        <StatusBadge value={regStatus}/>
-        {editable&&<button type="button" className="icon-button danger" title="Xóa kế hoạch" onClick={remove}><Trash2 size={15}/></button>}
-      </span>
-    </div>
-    <h3>{plan.subject}</h3><p>{plan.task}</p>
-    <div className="plan-meta"><span>Ưu tiên: <StatusBadge value={plan.priority}/></span><DeviceBadge plan={plan}/></div>
-    {reflection?.rating!=null&&<div className="plan-rating"><RatingStars value={reflection.rating} readOnly size={15}/>
-      {reflection.auto_evaluated&&<small className="auto-tag">hệ thống tự đánh giá</small>}</div>}
-    {progress?.progress&&progress.progress!=='Chưa tới buổi'&&status.progress!=='Đã hoàn thành'
-      &&<div className="plan-progress"><StatusBadge value={progress.progress}/></div>}
-    {needsAck&&<div className="ack-warning"><AlertTriangle size={14}/><span>Em cần viết phản hồi cho tiết này</span></div>}
-    {reflection?.teacher_comment&&<div className="teacher-comment"><MessageSquareQuote size={14}/><span>{reflection.teacher_comment}</span></div>}
-    <div className="plan-footer">
-      <span>{reflection?<StatusBadge value={reflection.completion_status}/>:<span className="muted-text">Chưa cập nhật kết quả</span>}</span>
-      <span>{evidence.length?`📎 ${evidence.length} minh chứng`:(editable?'Chỉnh sửa kế hoạch':'Cập nhật kết quả')} <ChevronDown size={15}/></span>
-    </div>
   </article>
 }
 

@@ -84,9 +84,16 @@ export default function GuidePage() {
 
       <article className="guide-step"><span className="step-number">5</span><div>
         <h3><UploadCloud size={20}/> Cập nhật kết quả — nút to màu xanh</h3>
-        <p>Sau giờ tự học, mở thẻ của buổi đó. Mỗi nhiệm vụ chưa có kết quả sẽ có một nút lớn
+        <p>Những nhiệm vụ em chưa ghi kết quả được gom lên đầu trang ở mục
+           <strong> “Cần cập nhật kết quả”</strong>, thẻ có viền cam và dòng nhiệm vụ có vạch cam bên trái —
+           em không thể bỏ sót. Mỗi nhiệm vụ như vậy có một nút lớn
            <strong> “Cập nhật kết quả”</strong> ngay bên dưới. Bấm vào đó, chọn Hoàn thành / Một phần / Chưa hoàn thành,
            ghi vài dòng, và bật <em>“Em cần giáo viên hỗ trợ”</em> nếu còn vướng.</p>
+        <div className="guide-tip"><ListPlus size={16}/><span>
+          Ở mục <strong>“Nhiệm vụ của em”</strong> bên dưới, em lọc nhanh bằng các nút
+          <em> Tất cả · Sắp tới · Chưa có kết quả · Đã xong · Cần viết phản hồi</em>, tìm theo môn hoặc nội dung,
+          đổi thứ tự sắp xếp, và chuyển trang khi danh sách dài.
+        </span></div>
         <div className="guide-tip"><FileCheck2 size={16}/><span>
           <strong>Minh chứng nộp kiểu nào cũng được</strong> (tối đa 3 mục mỗi nhiệm vụ):
           <ul className="tip-list">
