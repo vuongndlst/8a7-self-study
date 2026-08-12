@@ -7,6 +7,9 @@ import { generateTempPassword, passwordChecks, validateStudentPassword } from '.
 import StatusBadge from '../components/StatusBadge'
 import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
 import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
+import ClassSchedule from '../components/ClassSchedule'
+
+const PAGE_SIZE = 25
 
 const tomorrowISO = () => {
   const d = new Date(todayISO() + 'T00:00:00Z')
@@ -27,6 +30,7 @@ export default function TeacherPage(){
   const [selectedPlans,setSelectedPlans]=useState(new Set())
   const [bulkAction,setBulkAction]=useState(null)
   const [sortBy,setSortBy]=useState('date_desc')
+  const [page,setPage]=useState(1)
   const [selected,setSelected]=useState(new Set())
   const [resetTargets,setResetTargets]=useState(null)
   const [taskTarget,setTaskTarget]=useState(null)
@@ -97,11 +101,21 @@ export default function TeacherPage(){
   const pendingInView=useMemo(()=>rows.filter(p=>p.review_status==='Chờ duyệt'),[rows])
   const selectedList=useMemo(()=>rows.filter(p=>selectedPlans.has(p.id)),[rows,selectedPlans])
   const togglePlan=(id)=>setSelectedPlans(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
-  const toggleAllPlans=()=>setSelectedPlans(prev=>
-    prev.size>=rows.length&&rows.length>0?new Set():new Set(rows.map(p=>p.id)))
+  // Ô tick ở đầu bảng chỉ tác động lên TRANG đang xem; muốn cả bộ lọc thì dùng
+  // nút "Chọn tất cả … chờ duyệt" ở thanh bên trên — nói rõ phạm vi để khỏi nhầm.
+  const toggleAllPlans=()=>setSelectedPlans(prev=>{
+    const ids=pageRows.map(p=>p.id)
+    const allOn=ids.length>0&&ids.every(id=>prev.has(id))
+    const n=new Set(prev)
+    ids.forEach(id=>allOn?n.delete(id):n.add(id))
+    return n
+  })
   const selectAllPending=()=>setSelectedPlans(new Set(pendingInView.map(p=>p.id)))
   // Đổi bộ lọc thì bỏ chọn, tránh thao tác nhầm lên nhóm không còn nhìn thấy.
-  useEffect(()=>{setSelectedPlans(new Set())},[filters,sortBy])
+  useEffect(()=>{setSelectedPlans(new Set());setPage(1)},[filters,sortBy])
+
+  const totalPages=Math.max(1,Math.ceil(rows.length/PAGE_SIZE))
+  const pageRows=useMemo(()=>rows.slice((page-1)*PAGE_SIZE,page*PAGE_SIZE),[rows,page])
 
   const stats=useMemo(()=>{
     const total=rows.length
@@ -274,11 +288,28 @@ export default function TeacherPage(){
     <div className="segmented view-switch">
       <button type="button" className={view==='plans'?'active':''} onClick={()=>setView('plans')}>Theo kế hoạch</button>
       <button type="button" className={view==='students'?'active':''} onClick={()=>setView('students')}>Theo học sinh</button>
+      <button type="button" className={view==='schedule'?'active':''} onClick={()=>setView('schedule')}>Chưa đăng ký</button>
       <button type="button" className={view==='assistants'?'active':''} onClick={()=>setView('assistants')}>Trợ giảng</button>
     </div>
 
+    {view==='schedule'&&<ClassSchedule classId={context.classId} className={context.className}/>}
+
     {view==='assistants'&&<AssistantsPanel
       classId={context.classId} perStudent={perStudent} assistants={assistants} onChanged={load}/>}
+
+    {view==='plans'&&<div className="quick-views">
+      <span className="muted-text">Xem nhanh:</span>
+      <button className={`chip-btn ${filters.from===todayISO()&&filters.to===todayISO()?'on':''}`}
+        onClick={()=>setFilters({...filters,from:todayISO(),to:todayISO(),review:'',progress:''})}>Hôm nay</button>
+      <button className={`chip-btn ${filters.from===tomorrowISO()&&filters.to===tomorrowISO()?'on':''}`}
+        onClick={()=>setFilters({...filters,from:tomorrowISO(),to:tomorrowISO(),review:'',progress:''})}>Ngày mai</button>
+      <button className={`chip-btn ${filters.device==='co'&&filters.review==='Chờ duyệt'?'on':''}`}
+        onClick={()=>setFilters({...filters,device:'co',review:'Chờ duyệt',progress:''})}>Thiết bị chờ duyệt</button>
+      <button className={`chip-btn ${filters.device==='co'?'on':''}`}
+        onClick={()=>setFilters({...filters,device:'co',review:'',progress:''})}>Có dùng thiết bị</button>
+      <button className={`chip-btn ${filters.progress==='Trễ hạn cập nhật'?'on':''}`}
+        onClick={()=>setFilters({...filters,progress:'Trễ hạn cập nhật',review:'',device:''})}>Trễ hạn cập nhật</button>
+    </div>}
 
     {view==='plans'&&<section className="card filters filters-wide">
       <div className="search-box"><Search size={17}/><input value={filters.search} onChange={e=>setFilters({...filters,search:e.target.value})} placeholder="Tìm tên, MSHS, môn, nhiệm vụ…"/></div>
@@ -331,7 +362,7 @@ export default function TeacherPage(){
       </button>
     </section>}
 
-    {view!=='assistants'&&<section className="card table-card">
+    {view!=='assistants'&&view!=='schedule'&&<section className="card table-card">
       {loading?<div className="empty-state">Đang tải dữ liệu…</div>
       :view==='students'
       ?<div className="table-wrap"><table>
@@ -366,16 +397,19 @@ export default function TeacherPage(){
       </table>{perStudent.length===0&&<div className="empty-state">Chưa có học sinh nào trong lớp.</div>}</div>
       :<div className="table-wrap"><table>
         <thead><tr>
-          <th className="pick"><input type="checkbox" title="Chọn tất cả đang hiển thị"
-            checked={rows.length>0&&selectedPlans.size>=rows.length}
-            ref={el=>{if(el)el.indeterminate=selectedPlans.size>0&&selectedPlans.size<rows.length}}
+          <th className="pick"><input type="checkbox" title="Chọn tất cả trên trang này"
+            checked={pageRows.length>0&&pageRows.every(p=>selectedPlans.has(p.id))}
+            ref={el=>{if(el){const n=pageRows.filter(p=>selectedPlans.has(p.id)).length
+              el.indeterminate=n>0&&n<pageRows.length}}}
             onChange={toggleAllPlans}/></th>
           <th>Học sinh</th><th>Ngày / Tiết</th><th>Nội dung</th><th>Duyệt</th><th>Tiến độ</th><th>Thiết bị</th><th>Minh chứng</th><th>Thao tác</th>
         </tr></thead>
-        <tbody>{rows.map(p=>{
+        <tbody>{pageRows.map(p=>{
           const s=studentMap[p.student_id]||{};const r=reflections[p.id];const ev=evidence[p.id]||[]
-          return <tr key={p.id} className={`${ratingTone(r?.rating)} ${selectedPlans.has(p.id)?'picked':''}`}>
-            <td className="pick"><input type="checkbox" checked={selectedPlans.has(p.id)} onChange={()=>togglePlan(p.id)}/></td>
+          // Bấm vào bất kỳ đâu trên dòng đều mở chi tiết; các ô có nút riêng thì chặn nổi bọt.
+          return <tr key={p.id} className={`${ratingTone(r?.rating)} ${selectedPlans.has(p.id)?'picked':''} clickable`}
+                     onClick={()=>setTaskTarget({plan:p,student:s})}>
+            <td className="pick" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedPlans.has(p.id)} onChange={()=>togglePlan(p.id)}/></td>
             <td><strong>{s.full_name}</strong><small>{s.mshs}</small></td>
             <td>{formatDate(p.study_date)}<small>Tiết {p.period}</small></td>
             <td><button className="link-button task-link" onClick={()=>setTaskTarget({plan:p,student:s})}>{p.subject}</button><small title={p.task}>{p.task}</small></td>
@@ -393,17 +427,23 @@ export default function TeacherPage(){
                 {r.teacher_comment&&<small className="teacher-comment-mini">💬 {r.teacher_comment}</small>}
               </>:<><span className="muted-text">Chưa cập nhật</span>
                     {status[p.id]?.progress==='Trễ hạn cập nhật'&&<small className="help-flag">⏱ Trễ hạn cập nhật</small>}</>}</td>
-            <td>{p.use_device?<div className="device-cell">
+            <td onClick={e=>e.stopPropagation()}>{p.use_device?<div className="device-cell">
                 <span title={p.device_purpose}>💻</span> <StatusBadge value={p.device_status}/>
                 {p.device_status==='Chờ duyệt'&&<span className="device-actions">
                   <button className="icon-button success" title="Duyệt" onClick={()=>reviewDevice(p,'Đã duyệt')}><Check size={15}/></button>
                   <button className="icon-button danger" title="Từ chối" onClick={()=>reviewDevice(p,'Từ chối')}><X size={15}/></button>
                 </span>}
               </div>:'—'}</td>
-            <td>{ev.length?ev.map(x=><button key={x.id} className="mini-link" onClick={()=>openEvidence(x)}>{x.kind==='link'?'🔗':'📎'}<ExternalLink size={12}/></button>):'—'}</td>
-            <td><button className="icon-button" title="Xem chi tiết và chấm sao" onClick={()=>setTaskTarget({plan:p,student:s})}><MessageSquareQuote size={16}/></button></td>
+            <td onClick={e=>e.stopPropagation()}>{ev.length?ev.map(x=><button key={x.id} className="mini-link" onClick={()=>openEvidence(x)}>{x.kind==='link'?'🔗':'📎'}<ExternalLink size={12}/></button>):'—'}</td>
+            <td onClick={e=>e.stopPropagation()}><button className="icon-button" title="Xem chi tiết và chấm sao" onClick={()=>setTaskTarget({plan:p,student:s})}><MessageSquareQuote size={16}/></button></td>
           </tr>})}</tbody>
       </table>{rows.length===0&&<div className="empty-state">Không có dữ liệu phù hợp bộ lọc.</div>}</div>}
+
+      {view==='plans'&&rows.length>PAGE_SIZE&&<div className="pager">
+        <button className="button ghost" disabled={page===1} onClick={()=>setPage(p=>p-1)}>← Trước</button>
+        <span>Trang <strong>{page}</strong> / {totalPages} · {rows.length} kế hoạch</span>
+        <button className="button ghost" disabled={page===totalPages} onClick={()=>setPage(p=>p+1)}>Sau →</button>
+      </div>}
     </section>}
 
     {bulkAction&&<BulkReviewModal action={bulkAction} plans={selectedList} studentMap={studentMap}

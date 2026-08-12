@@ -154,10 +154,14 @@ alter table public.plans add column if not exists review_note text;
 -- Tăng mỗi lần đổi kết luận duyệt — dùng làm khóa chống trùng thông báo.
 alter table public.plans add column if not exists review_version integer not null default 0;
 
+-- 'Không cần duyệt': kế hoạch KHÔNG dùng thiết bị điện tử thì không phải qua tay
+-- giáo viên. Để riêng một trạng thái thay vì gộp vào 'Đã duyệt' để thầy cô phân
+-- biệt được "tôi đã xem" và "hệ thống bỏ qua vì không cần".
 do $$ begin
+  alter table public.plans drop constraint if exists plans_review_status_check;
   alter table public.plans add constraint plans_review_status_check
-    check (review_status in ('Chờ duyệt','Đã duyệt','Cần điều chỉnh'));
-exception when duplicate_object then null; end $$;
+    check (review_status in ('Chờ duyệt','Đã duyệt','Cần điều chỉnh','Không cần duyệt'));
+exception when others then null; end $$;
 
 do $$ begin
   alter table public.plans add constraint plans_review_note_check
@@ -166,16 +170,20 @@ exception when duplicate_object then null; end $$;
 
 create index if not exists plans_review_idx on public.plans (class_id, review_status);
 
--- Chuyển dữ liệu cũ: kế hoạch nào giáo viên ĐÃ duyệt thiết bị thì coi như đã duyệt
--- kế hoạch, giữ đúng người và thời điểm — không bắt thầy cô duyệt lại việc đã làm.
-update public.plans
-   set review_status = 'Đã duyệt',
-       review_by     = device_reviewed_by,
-       review_at     = device_reviewed_at,
-       review_version = 1
- where device_status = 'Đã duyệt'
-   and review_status = 'Chờ duyệt'
-   and review_at is null;
+-- Phần chuyển dữ liệu cũ nằm ở CUỐI FILE, sau khi mọi trigger đã được thay thế.
+-- Nếu để ở đây, trigger bản cũ vẫn đang hiệu lực sẽ hoàn nguyên lệnh update.
+
+-- ---------- Lịch tự học cố định của lớp ----------
+-- Lớp được phân giờ tự học cố định theo tuần (ví dụ: thứ Hai tiết 5, thứ Tư tiết 1).
+-- Khai báo ở đây để: (1) học sinh chỉ chọn được đúng khung giờ của lớp,
+-- (2) giáo viên biết chính xác ngày nào ai chưa đăng ký.
+create table if not exists public.class_schedule (
+  class_id uuid not null references public.classes(id) on delete cascade,
+  weekday  smallint not null check (weekday between 1 and 7),   -- 1 = Thứ Hai … 7 = Chủ nhật
+  period   smallint not null check (period between 1 and 9),
+  created_at timestamptz not null default now(),
+  primary key (class_id, weekday, period)
+);
 
 -- v4: đánh dấu bản ghi do hệ thống tự sinh khi học sinh không cập nhật kết quả.
 alter table public.reflections add column if not exists auto_evaluated boolean not null default false;
@@ -477,6 +485,12 @@ begin
     new.device_reviewed_by := null;
     new.device_reviewed_at := null;
     new.device_review_note := null;
+    -- Chỉ kế hoạch có dùng thiết bị mới vào hàng chờ duyệt của giáo viên.
+    new.review_status      := case when new.use_device then 'Chờ duyệt' else 'Không cần duyệt' end;
+    new.review_by          := null;
+    new.review_at          := null;
+    new.review_note        := null;
+    new.review_version     := 0;
   end if;
   return new;
 end;
@@ -508,31 +522,44 @@ for each row execute function public.limit_evidence_per_plan();
 create or replace function public.plans_guard_columns()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
+  -- auth.uid() NULL = service role (migration, script quản trị, job nền).
+  -- Không chặn gì cả, nếu không mọi lệnh sửa từ server sẽ bị hoàn nguyên âm thầm.
+  if auth.uid() is null then
+    return new;
+  end if;
+
   if auth.uid() = old.student_id then
     -- Học sinh: không đụng vào kết quả duyệt thiết bị.
     new.device_status      := old.device_status;
     new.device_reviewed_by := old.device_reviewed_by;
     new.device_reviewed_at := old.device_reviewed_at;
     new.device_review_note := old.device_review_note;
-    -- Bật/tắt thiết bị thì trạng thái duyệt quay về đúng trạng thái khởi đầu.
-    if new.use_device is distinct from old.use_device then
-      new.device_status := case when new.use_device then 'Chờ duyệt' else 'Không dùng' end;
-      new.device_reviewed_by := null;
-      new.device_reviewed_at := null;
-      new.device_review_note := null;
-    end if;
-    -- Kết luận duyệt là việc của giáo viên.
+    -- Kết luận duyệt là việc của giáo viên: mặc định giữ nguyên.
+    -- ĐẶT TRƯỚC hai khối bên dưới, vì chúng mới là ngoại lệ được phép đổi.
     new.review_status  := old.review_status;
     new.review_by      := old.review_by;
     new.review_at      := old.review_at;
     new.review_note    := old.review_note;
     new.review_version := old.review_version;
-    -- Sửa nội dung kế hoạch đã bị "Cần điều chỉnh" → quay lại hàng chờ duyệt.
-    if old.review_status = 'Cần điều chỉnh'
+
+    -- Ngoại lệ 1: bật/tắt thiết bị. Bật → phải chờ duyệt. Tắt → không cần duyệt.
+    if new.use_device is distinct from old.use_device then
+      new.device_status := case when new.use_device then 'Chờ duyệt' else 'Không dùng' end;
+      new.device_reviewed_by := null;
+      new.device_reviewed_at := null;
+      new.device_review_note := null;
+      new.review_status  := case when new.use_device then 'Chờ duyệt' else 'Không cần duyệt' end;
+      new.review_by      := null;
+      new.review_at      := null;
+      new.review_note    := null;
+      new.review_version := old.review_version + 1;
+
+    -- Ngoại lệ 2: sửa nội dung kế hoạch đang bị "Cần điều chỉnh" → quay lại hàng chờ.
+    elsif old.review_status = 'Cần điều chỉnh'
        and (new.task is distinct from old.task
             or new.goal is distinct from old.goal
             or new.subject is distinct from old.subject) then
-      new.review_status  := 'Chờ duyệt';
+      new.review_status  := case when new.use_device then 'Chờ duyệt' else 'Không cần duyệt' end;
       new.review_version := old.review_version + 1;
     end if;
   else
@@ -586,6 +613,11 @@ create or replace function public.reflections_guard_columns()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare v_class uuid;
 begin
+  -- Xem chú thích ở plans_guard_columns: service role không bị chặn.
+  if auth.uid() is null then
+    return new;
+  end if;
+
   select class_id into v_class from public.plans where id = new.plan_id;
 
   if auth.uid() = old.student_id then
@@ -957,6 +989,58 @@ drop trigger if exists trg_z_mark_late_result on public.reflections;
 create trigger trg_z_mark_late_result before update on public.reflections
 for each row execute function public.mark_late_result();
 
+-- ---------- Ai chưa đăng ký cho một ngày cụ thể ----------
+-- Nếu lớp đã khai lịch tự học cố định: liệt kê theo TỪNG TIẾT của ngày đó.
+-- Nếu chưa khai lịch: chỉ xét "em này có kế hoạch nào trong ngày không".
+-- Chỉ tính học sinh đã tạo tài khoản — em chưa đăng ký tài khoản là việc khác.
+create or replace function public.missing_registrations(p_class uuid, p_date date)
+returns table (student_id uuid, mshs text, full_name text, period smallint)
+language sql stable security definer set search_path = public as $$
+  with allowed as (
+    select 1 where public.staff_perm(p_class, 'view_plans')
+  ),
+  slots as (
+    select cs.period
+    from public.class_schedule cs
+    where cs.class_id = p_class
+      and cs.weekday = extract(isodow from p_date)::smallint
+  ),
+  -- Phân biệt "lớp chưa khai lịch bao giờ" với "thứ này lớp không có tiết tự học".
+  -- Thứ không có tiết thì KHÔNG ai bị coi là thiếu.
+  has_schedule as (
+    select 1 from public.class_schedule where class_id = p_class limit 1
+  ),
+  roster as (
+    select s.claimed_user_id as sid, s.mshs, s.full_name
+    from public.enrollments e
+    join public.students s on s.mshs = e.mshs
+    where e.class_id = p_class and e.is_active and s.claimed_user_id is not null
+  )
+  -- Có khai lịch → thiếu theo từng tiết
+  select r.sid, r.mshs, r.full_name, sl.period
+  from roster r
+  cross join slots sl
+  where exists (select 1 from allowed)
+    and not exists (
+      select 1 from public.plans p
+      where p.student_id = r.sid and p.study_date = p_date and p.period = sl.period
+    )
+  union all
+  -- Lớp CHƯA khai lịch bao giờ → chỉ xét "có kế hoạch nào trong ngày không"
+  select r.sid, r.mshs, r.full_name, null::smallint
+  from roster r
+  where exists (select 1 from allowed)
+    and not exists (select 1 from has_schedule)
+    and not exists (
+      select 1 from public.plans p
+      where p.student_id = r.sid and p.study_date = p_date
+    )
+  order by 3, 4;
+$$;
+
+revoke all on function public.missing_registrations(uuid, date) from public, anon;
+grant execute on function public.missing_registrations(uuid, date) to authenticated;
+
 -- ---------- Duyệt kế hoạch hàng loạt ----------
 -- Một lệnh thay vì 30 request từ trình duyệt. Chạy dưới quyền người gọi (không
 -- phải security definer) nên RLS và trigger tách cột vẫn được áp dụng nguyên vẹn:
@@ -1016,6 +1100,7 @@ alter table public.school_years       enable row level security;
 alter table public.classes            enable row level security;
 alter table public.class_teachers     enable row level security;
 alter table public.class_assistants   enable row level security;
+alter table public.class_schedule     enable row level security;
 alter table public.students           enable row level security;
 alter table public.enrollments        enable row level security;
 alter table public.profiles           enable row level security;
@@ -1034,7 +1119,8 @@ begin
            where schemaname='public'
              and tablename in ('school_years','classes','class_teachers','class_assistants',
                                'students','enrollments','profiles','plans','reflections','evidence',
-                               'conversations','messages','conversation_reads','notifications')
+                               'conversations','messages','conversation_reads','notifications',
+                               'class_schedule')
   loop
     execute format('drop policy if exists %I on %I.%I', p.policyname, p.schemaname, p.tablename);
   end loop;
@@ -1059,6 +1145,17 @@ with check (public.teaches_class(class_id));
 
 create policy assistants_self_read on public.class_assistants
 for select to authenticated using (student_id = auth.uid());
+
+-- Lịch tự học cố định: giáo viên lớp quản lý; ai trong lớp cũng đọc được
+-- (học sinh cần biết lớp mình có giờ tự học vào tiết nào).
+create policy schedule_teacher_all on public.class_schedule
+for all to authenticated
+using (public.teaches_class(class_id))
+with check (public.teaches_class(class_id));
+
+create policy schedule_read on public.class_schedule
+for select to authenticated
+using (public.staff_perm(class_id, 'view_plans') or class_id = public.student_active_class(auth.uid()));
 
 -- Danh sách lớp: học sinh KHÔNG đọc được của bạn khác; GV chỉ đọc lớp mình phụ trách.
 -- Lọc theo GHI DANH chứ không theo claimed_user_id — nếu không, em nào chưa tạo
@@ -1305,14 +1402,16 @@ create index if not exists enrollments_class_idx   on public.enrollments (class_
 revoke all on public.school_years, public.classes, public.class_teachers, public.class_assistants,
               public.students, public.enrollments, public.profiles, public.plans, public.reflections,
               public.evidence, public.conversations, public.messages, public.conversation_reads,
-              public.notifications
+              public.notifications, public.class_schedule
        from anon, authenticated;
 
 grant select on public.school_years, public.classes, public.class_teachers, public.class_assistants,
                 public.students, public.enrollments, public.profiles, public.plans, public.reflections,
                 public.evidence, public.conversations, public.messages, public.conversation_reads,
-                public.notifications
+                public.notifications, public.class_schedule
       to authenticated;
+
+grant insert, update, delete on public.class_schedule to authenticated;   -- RLS: chỉ giáo viên lớp
 
 -- profiles / students / enrollments / classes chỉ được ghi bởi Edge Function và script
 -- quản trị (chạy bằng service role, bỏ qua cả hai lớp).
@@ -1336,5 +1435,26 @@ grant select on public.app_settings to authenticated;
 -- Kho mẫu phản hồi tự động: không cần lộ ra client.
 alter table public.auto_feedback_templates enable row level security;
 revoke all on public.auto_feedback_templates from anon, authenticated;
+
+-- ---------- Chuyển dữ liệu cũ ----------
+-- ĐẶT Ở CUỐI FILE là có chủ ý: các trigger bảo vệ cột phải được thay thế xong
+-- trước, nếu không bản trigger cũ sẽ âm thầm hoàn nguyên những lệnh update này.
+
+-- Kế hoạch nào giáo viên ĐÃ duyệt thiết bị thì coi như đã duyệt kế hoạch, giữ
+-- đúng người và thời điểm — không bắt thầy cô duyệt lại việc đã làm.
+update public.plans
+   set review_status  = 'Đã duyệt',
+       review_by      = device_reviewed_by,
+       review_at      = device_reviewed_at,
+       review_version = 1
+ where device_status = 'Đã duyệt'
+   and review_status = 'Chờ duyệt'
+   and review_at is null;
+
+-- Không dùng thiết bị điện tử thì không cần qua tay giáo viên.
+update public.plans
+   set review_status = 'Không cần duyệt'
+ where not use_device
+   and review_status = 'Chờ duyệt';
 
 -- Danh sách lớp được nạp riêng bằng supabase/seed-roster.private.sql

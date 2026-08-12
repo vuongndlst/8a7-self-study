@@ -8,6 +8,8 @@ export default function StatusBadge({ value, label }) {
     'Chưa tới buổi': 'muted', 'Đang chờ cập nhật': 'warning',
     'Trễ hạn cập nhật': 'danger', 'Đã hoàn thành': 'success', 'Hệ thống tự đánh giá': 'danger',
     'Cần xem lại': 'warning',
+    // Không dùng thiết bị điện tử thì không phải qua tay giáo viên.
+    'Không cần duyệt': 'muted', 'Cần điều chỉnh': 'warning',
   }
   return <span className={`badge ${map[value] || 'muted'}`}>{label || value || '—'}</span>
 }

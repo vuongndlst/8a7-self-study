@@ -171,11 +171,15 @@ Dashboard riêng của TA ở `#/ta`, chỉ hiện khi em được cử.
 
 ## 7. Duyệt kế hoạch
 
+**Chỉ kế hoạch có đăng ký thiết bị điện tử mới cần duyệt.** Kế hoạch không dùng thiết bị
+vào thẳng trạng thái `Không cần duyệt`, không làm phình hàng chờ của giáo viên. Học sinh
+bật/tắt ô thiết bị thì trạng thái duyệt tự đổi theo.
+
 Một kế hoạch có **hai chiều độc lập** — đừng trộn lẫn:
 
 | Chiều | Giá trị | Ai đổi |
 |---|---|---|
-| **Duyệt** (`review_status`) | Chờ duyệt · Đã duyệt · Cần điều chỉnh | Giáo viên, hoặc TA có `can_approve_plan` |
+| **Duyệt** (`review_status`) | Chờ duyệt · Đã duyệt · Cần điều chỉnh · Không cần duyệt | Giáo viên, hoặc TA có `can_approve_plan` |
 | **Tiến độ** (`progress`) | Chưa tới buổi · Đang chờ cập nhật · Trễ hạn · Đã hoàn thành · Hệ thống tự đánh giá | Suy ra từ dữ liệu, không ai nhập tay |
 
 Trạng thái *"Đã duyệt · Trễ hạn cập nhật"* là hoàn toàn hợp lệ: duyệt xong không có nghĩa là đã làm.
@@ -201,7 +205,39 @@ Khi em **sửa lại nhiệm vụ/mục tiêu/môn**, kế hoạch **tự quay v
 `review_version` — không phải đăng ký lại từ đầu. Khóa chống trùng thông báo dùng
 `plan-review:<id>:<version>` nên mỗi vòng duyệt chỉ báo một lần.
 
-## 8. Hạn cập nhật kết quả — tự động hóa
+### Xem nhanh, phân trang, bấm dòng
+
+Trên tab **Theo kế hoạch** có hàng nút xem nhanh: *Hôm nay · Ngày mai · Thiết bị chờ duyệt ·
+Có dùng thiết bị · Trễ hạn cập nhật*. Bảng phân trang 25 dòng. **Bấm vào bất kỳ đâu trên
+một dòng** là mở popup chi tiết tiết đó; các ô có nút riêng (tick chọn, duyệt thiết bị,
+minh chứng) không kích hoạt popup.
+
+Ô tick ở đầu bảng chỉ chọn **trang đang xem**; muốn cả bộ lọc thì dùng nút *"Chọn tất cả N
+kế hoạch chờ duyệt"* ở thanh bên trên — nói rõ phạm vi để không thao tác nhầm.
+
+## 8. Lịch tự học cố định và ai chưa đăng ký
+
+Tab **Chưa đăng ký** trên dashboard giáo viên.
+
+Lớp thường được phân giờ tự học **cố định theo tuần**. Khai bằng lưới tick 7 thứ × 9 tiết
+(bảng `class_schedule`). Khai xong thì phần kiểm tra bên dưới biết chính xác **từng tiết**
+ai chưa đăng ký, thay vì chỉ biết "em này không có kế hoạch nào trong ngày".
+
+Chọn ngày (hoặc bấm *Hôm nay* / *Ngày mai*) → hàm `missing_registrations(class, date)` trả
+về danh sách em còn thiếu, gộp theo học sinh kèm số tiết còn thiếu.
+
+Ba trường hợp được phân biệt rõ:
+
+| Tình huống | Kết quả |
+|---|---|
+| Lớp đã khai lịch, ngày đó **có** tiết tự học | Liệt kê theo từng tiết còn thiếu |
+| Lớp đã khai lịch, ngày đó **không** có tiết | Không báo ai thiếu cả |
+| Lớp **chưa khai** lịch bao giờ | Chỉ xét "có kế hoạch nào trong ngày không" |
+
+Hàm là `security definer` nhưng tự kiểm `staff_perm(class, 'view_plans')` bên trong, nên
+học sinh gọi vào cũng không lấy được dữ liệu lớp.
+
+## 9. Hạn cập nhật kết quả — tự động hóa
 
 Vòng lặp Plan → Do → **Update** → Reflect hay đứt ở bước 3: lúc audit có **7/9 kế hoạch
 đã qua ngày không bao giờ được cập nhật kết quả (78%)**. Hệ thống tự xử lý phần này.
@@ -257,7 +293,7 @@ Học sinh vẫn cập nhật được sau khi bị tự đánh giá. Khi đó h
 (`auto_evaluated`, `auto_evaluated_at`), đóng dấu `late_result_at` và bật `needs_recheck`
 để giáo viên thấy trên dashboard và chấm lại. Học sinh không tự xóa được các dấu này.
 
-## 9. Nhắc quá hạn — hiển thị trong ứng dụng
+## 10. Nhắc quá hạn — hiển thị trong ứng dụng
 
 Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên màn hình:
 
@@ -267,7 +303,7 @@ Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên
 - **Học sinh** — banner cảnh báo số tiết đã qua mà chưa cập nhật kết quả, và báo khi
   giáo viên có nhận xét mới.
 
-## 10. Deploy Edge Functions
+## 11. Deploy Edge Functions
 
 ```bash
 npx supabase login
@@ -285,7 +321,7 @@ npx supabase functions deploy student-change-password --no-verify-jwt
 | `teacher-reset-password` | giáo viên | đọc Bearer token, phải là teacher **và** phụ trách lớp của HS đó |
 | `student-change-password` | học sinh | phải là student, đúng mật khẩu hiện tại, đủ luật mật khẩu |
 
-## 11. Quyền dữ liệu
+## 12. Quyền dữ liệu
 
 **Học sinh** — chỉ đọc/ghi dữ liệu của chính mình; không đọc danh sách lớp; chỉ tạo kế
 hoạch cho hôm nay trở đi; chỉ sửa/xóa kế hoạch còn ở tương lai; chỉ nộp phản tư và minh
@@ -305,7 +341,7 @@ chặn được cột.
 > (`teaches_mshs`, `my_mshs`). Viết thẳng `exists (select … from enrollments)` trong policy
 > của `students` sẽ khiến Postgres báo `42P17 infinite recursion`.
 
-## 12. Cấu trúc
+## 13. Cấu trúc
 
 ```text
 src/
