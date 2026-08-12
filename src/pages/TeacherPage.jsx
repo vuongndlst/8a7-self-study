@@ -7,7 +7,8 @@ import { generateTempPassword, passwordChecks, validateStudentPassword } from '.
 import StatusBadge from '../components/StatusBadge'
 import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
 import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
-import ClassSchedule from '../components/ClassSchedule'
+import { ClassScheduleSettings, MissingRegistrations } from '../components/ClassSchedule'
+import Avatar from '../components/Avatar'
 
 const PAGE_SIZE = 25
 
@@ -42,7 +43,7 @@ export default function TeacherPage(){
   const load=async()=>{
     setLoading(true)
     const [{data:s},{data:enr},{data:p},{data:ta}]=await Promise.all([
-      supabase.from('profiles').select('id,mshs,full_name,created_at,must_change_password').eq('role','student').order('full_name'),
+      supabase.from('profiles').select('id,mshs,full_name,created_at,must_change_password,avatar_path').eq('role','student').order('full_name'),
       supabase.from('enrollments').select('mshs,is_active,students!inner(mshs,full_name,claimed_user_id)').eq('is_active',true),
       supabase.from('plans').select('*').order('study_date',{ascending:false}).order('period'),
       supabase.from('class_assistants').select('*'),
@@ -145,6 +146,7 @@ export default function TeacherPage(){
       map.set(s.mshs,{
         mshs:s.mshs, name:s.full_name,
         id:s.claimed_user_id, hasAccount:!!s.claimed_user_id,
+        avatarPath:studentMap[s.claimed_user_id]?.avatar_path??null,
         mustChange:!!studentMap[s.claimed_user_id]?.must_change_password,
         isTa:assistants.some(a=>a.student_id===s.claimed_user_id),
         total:0,ontime:0,done:0,pending:0,help:0,low:0,ratingSum:0,ratingCount:0,avg:null,plannedTomorrow:false,
@@ -193,6 +195,7 @@ export default function TeacherPage(){
   })
 
   const openEvidence=async(item)=>{
+    if(item.kind==='text')return window.alert(item.body_text||'')
     if(item.kind==='link')return window.open(item.external_url,'_blank','noopener,noreferrer')
     const {data}=await supabase.storage.from('evidence').createSignedUrl(item.storage_path,180)
     if(data?.signedUrl)window.open(data.signedUrl,'_blank','noopener,noreferrer')
@@ -288,11 +291,13 @@ export default function TeacherPage(){
     <div className="segmented view-switch">
       <button type="button" className={view==='plans'?'active':''} onClick={()=>setView('plans')}>Theo kế hoạch</button>
       <button type="button" className={view==='students'?'active':''} onClick={()=>setView('students')}>Theo học sinh</button>
-      <button type="button" className={view==='schedule'?'active':''} onClick={()=>setView('schedule')}>Chưa đăng ký</button>
+      <button type="button" className={view==='missing'?'active':''} onClick={()=>setView('missing')}>HS chưa đăng ký</button>
+      <button type="button" className={view==='schedule'?'active':''} onClick={()=>setView('schedule')}>Lịch tự học</button>
       <button type="button" className={view==='assistants'?'active':''} onClick={()=>setView('assistants')}>Trợ giảng</button>
     </div>
 
-    {view==='schedule'&&<ClassSchedule classId={context.classId} className={context.className}/>}
+    {view==='schedule'&&<ClassScheduleSettings classId={context.classId} className={context.className}/>}
+    {view==='missing'&&<MissingRegistrations classId={context.classId}/>}
 
     {view==='assistants'&&<AssistantsPanel
       classId={context.classId} perStudent={perStudent} assistants={assistants} onChanged={load}/>}
@@ -362,7 +367,7 @@ export default function TeacherPage(){
       </button>
     </section>}
 
-    {view!=='assistants'&&view!=='schedule'&&<section className="card table-card">
+    {(view==='plans'||view==='students')&&<section className="card table-card">
       {loading?<div className="empty-state">Đang tải dữ liệu…</div>
       :view==='students'
       ?<div className="table-wrap"><table>
@@ -375,10 +380,12 @@ export default function TeacherPage(){
         <tbody>{perStudent.map(r=><tr key={r.mshs} className={selected.has(r.mshs)?'picked':''}>
           <td className="pick"><input type="checkbox" disabled={!r.hasAccount} checked={selected.has(r.mshs)} onChange={()=>toggle(r.mshs)}/></td>
           <td>
-            {r.hasAccount
-              ? <button className="link-button name-link" onClick={()=>setStudentDetail(r)}>{r.name}</button>
-              : <strong>{r.name}</strong>}
-            <small>{r.mshs}{r.isTa?' · TA':''}</small>
+            <span className="cell-with-avatar"><Avatar name={r.name} path={r.avatarPath} size={30}/><span>
+              {r.hasAccount
+                ? <button className="link-button name-link" onClick={()=>setStudentDetail(r)}>{r.name}</button>
+                : <strong>{r.name}</strong>}
+              <small>{r.mshs}{r.isTa?' · TA':''}</small>
+            </span></span>
           </td>
           <td>{r.hasAccount
             ? (r.mustChange?<StatusBadge value="Chờ duyệt" label="Chờ HS đổi"/>:<StatusBadge value="Đúng hạn" label="Đã có"/>)
@@ -410,7 +417,8 @@ export default function TeacherPage(){
           return <tr key={p.id} className={`${ratingTone(r?.rating)} ${selectedPlans.has(p.id)?'picked':''} clickable`}
                      onClick={()=>setTaskTarget({plan:p,student:s})}>
             <td className="pick" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedPlans.has(p.id)} onChange={()=>togglePlan(p.id)}/></td>
-            <td><strong>{s.full_name}</strong><small>{s.mshs}</small></td>
+            <td><span className="cell-with-avatar"><Avatar name={s.full_name} path={s.avatar_path} size={30}/>
+              <span><strong>{s.full_name}</strong><small>{s.mshs}</small></span></span></td>
             <td>{formatDate(p.study_date)}<small>Tiết {p.period}</small></td>
             <td><button className="link-button task-link" onClick={()=>setTaskTarget({plan:p,student:s})}>{p.subject}</button><small title={p.task}>{p.task}</small></td>
             <td>
@@ -434,7 +442,7 @@ export default function TeacherPage(){
                   <button className="icon-button danger" title="Từ chối" onClick={()=>reviewDevice(p,'Từ chối')}><X size={15}/></button>
                 </span>}
               </div>:'—'}</td>
-            <td onClick={e=>e.stopPropagation()}>{ev.length?ev.map(x=><button key={x.id} className="mini-link" onClick={()=>openEvidence(x)}>{x.kind==='link'?'🔗':'📎'}<ExternalLink size={12}/></button>):'—'}</td>
+            <td onClick={e=>e.stopPropagation()}>{ev.length?ev.map(x=><button key={x.id} className="mini-link" onClick={()=>openEvidence(x)}>{x.kind==='link'?'🔗':x.kind==='text'?'📝':'📎'}<ExternalLink size={12}/></button>):'—'}</td>
             <td onClick={e=>e.stopPropagation()}><button className="icon-button" title="Xem chi tiết và chấm sao" onClick={()=>setTaskTarget({plan:p,student:s})}><MessageSquareQuote size={16}/></button></td>
           </tr>})}</tbody>
       </table>{rows.length===0&&<div className="empty-state">Không có dữ liệu phù hợp bộ lọc.</div>}</div>}
@@ -696,7 +704,7 @@ function TaskDetailModal({plan,student,reflection,evidence,onOpenEvidence,onClos
       {evidence.length>0&&<div className="evidence-block">
         <h3>Minh chứng đã nộp</h3>
         {evidence.map(x=><button key={x.id} type="button" className="evidence-item" onClick={()=>onOpenEvidence(x)}>
-          {x.kind==='link'?'🔗':'📎'} {x.display_name||'Minh chứng'} <ExternalLink size={14}/>
+          {x.kind==='link'?'🔗':x.kind==='text'?'📝':'📎'} {x.kind==='text'?(x.body_text||'').slice(0,80):(x.display_name||'Minh chứng')} {x.kind!=='text'&&<ExternalLink size={14}/>}
         </button>)}
       </div>}
 

@@ -6,7 +6,7 @@ Web quản lý giờ tự học theo quy trình **Plan → Do → Reflect**.
 
 - Frontend: React + Vite · Hosting: GitHub Pages · Backend: Supabase
 - Routing: HashRouter (không lỗi 404 khi refresh trên GitHub Pages)
-- Tiết tự học 1–9 · Minh chứng JPG/PNG/PDF ≤ 5 MB hoặc link, tối đa 3/kế hoạch
+- Tiết tự học 1–9 · Minh chứng: **mô tả bằng chữ**, ảnh/PDF ≤ 5 MB, hoặc link — tối đa 3/nhiệm vụ
 
 ## 1. Mô hình dữ liệu (đa năm học, đa lớp, đa giáo viên)
 
@@ -167,7 +167,19 @@ TA **không bao giờ**: đặt lại mật khẩu, sửa/xóa kế hoạch củ
 của TA khác, hay thấy dữ liệu lớp khác. Mọi lượt chấm sao / nhận xét đều ghi rõ người thực hiện
 (`rating_by`, `teacher_comment_by`).
 
-Dashboard riêng của TA ở `#/ta`, chỉ hiện khi em được cử.
+Dashboard riêng của TA ở `#/ta`, chỉ hiện khi em được cử. Trên đó có: thẻ thống kê theo
+đúng khoảng đang lọc, danh sách bạn cần hỗ trợ, danh sách **bạn chưa đăng ký** theo ngày,
+và bảng kế hoạch lớp có phân trang. Mỗi cột chỉ hiện khi quyền tương ứng được bật; quyền
+chưa bật thì nói thẳng là *"giáo viên chưa bật quyền"* thay vì để một ô trống khó hiểu.
+
+Hai chỗ dễ nhầm, đã xử lý:
+
+- Trang **Kế hoạch của em** phải lọc `student_id = chính mình` ở phía client. RLS cho TA
+  đọc cả lớp, nên không lọc thì trang cá nhân sẽ lẫn kế hoạch của bạn — và tệ hơn, form
+  đăng ký có thể gắn nhiệm vụ mới vào **buổi tự học của bạn khác**.
+- Đọc **tên** bạn dùng `staff_sees_student_name()` (teacher hoặc TA có bất kỳ quyền nào
+  trong `view_plans` / `view_help` / `chat`), rộng hơn `staff_sees_student(…, 'view_plans')`.
+  Nếu không, TA chỉ được bật `view_help` sẽ thấy một dashboard toàn dấu gạch.
 
 ## 7. Duyệt kế hoạch
 
@@ -183,6 +195,19 @@ Một kế hoạch có **hai chiều độc lập** — đừng trộn lẫn:
 | **Tiến độ** (`progress`) | Chưa tới buổi · Đang chờ cập nhật · Trễ hạn · Đã hoàn thành · Hệ thống tự đánh giá | Suy ra từ dữ liệu, không ai nhập tay |
 
 Trạng thái *"Đã duyệt · Trễ hạn cập nhật"* là hoàn toàn hợp lệ: duyệt xong không có nghĩa là đã làm.
+
+**Duyệt thiết bị và duyệt kế hoạch là một quyết định, đồng bộ hai chiều ngay trong
+trigger** `plans_guard_columns`:
+
+| Thầy cô làm | Hệ thống làm thêm |
+|---|---|
+| Duyệt thiết bị (`device_status = 'Đã duyệt'`) | `review_status = 'Đã duyệt'`, ghi `review_by/at`, tăng `review_version` |
+| Từ chối thiết bị | `review_status = 'Cần điều chỉnh'`, lấy lý do từ chối làm `review_note` |
+| Duyệt kế hoạch có dùng thiết bị | `device_status = 'Đã duyệt'`, ghi `device_reviewed_by/at` |
+
+Đặt ở trigger chứ không ở giao diện, nên mọi đường vào — bảng, popup chi tiết,
+`bulk_review_plans` — đều cho ra cùng một kết quả. Cả hai chiều đều kiểm
+`staff_perm(class, 'review_device')` trước khi đổi.
 
 ### Duyệt hàng loạt
 
@@ -217,14 +242,24 @@ kế hoạch chờ duyệt"* ở thanh bên trên — nói rõ phạm vi để k
 
 ## 8. Lịch tự học cố định và ai chưa đăng ký
 
-Tab **Chưa đăng ký** trên dashboard giáo viên.
+Hai việc khác nhau nên nằm ở **hai tab riêng**:
+
+- **Lịch tự học** — khai một lần đầu năm, gần như không đụng lại.
+- **HS chưa đăng ký** — mở gần như mỗi ngày.
+
+### Tab *Lịch tự học*
 
 Lớp thường được phân giờ tự học **cố định theo tuần**. Khai bằng lưới tick 7 thứ × 9 tiết
-(bảng `class_schedule`). Khai xong thì phần kiểm tra bên dưới biết chính xác **từng tiết**
-ai chưa đăng ký, thay vì chỉ biết "em này không có kế hoạch nào trong ngày".
+(bảng `class_schedule`). Khai xong thì hai chỗ hưởng lợi: học sinh **chỉ chọn được đúng
+những tiết lớp thực sự có giờ tự học**, và phần kiểm tra biết chính xác **từng tiết** ai
+chưa đăng ký thay vì chỉ biết "em này không có kế hoạch nào trong ngày".
+
+### Tab *HS chưa đăng ký*
 
 Chọn ngày (hoặc bấm *Hôm nay* / *Ngày mai*) → hàm `missing_registrations(class, date)` trả
-về danh sách em còn thiếu, gộp theo học sinh kèm số tiết còn thiếu.
+về danh sách em còn thiếu, gộp theo học sinh kèm số tiết còn thiếu. Có nút **Chép danh sách**
+để dán thẳng vào tin nhắn lớp. Trợ giảng có `can_view_plans` cũng thấy phần này trên
+dashboard của mình.
 
 Ba trường hợp được phân biệt rõ:
 
@@ -236,6 +271,28 @@ Ba trường hợp được phân biệt rõ:
 
 Hàm là `security definer` nhưng tự kiểm `staff_perm(class, 'view_plans')` bên trong, nên
 học sinh gọi vào cũng không lấy được dữ liệu lớp.
+
+## 8b. Buổi tự học, nhiều nhiệm vụ, và minh chứng
+
+Một **buổi** (`self_study_sessions`: học sinh × ngày × tiết) chứa **một hoặc nhiều nhiệm vụ**
+(`plans.session_id`). Form đăng ký mặc định mở **đúng một khối nhiệm vụ**; muốn thêm thì bấm
+*"+ Thêm nhiệm vụ"*. Đăng ký lại vào buổi đã có thì nhiệm vụ mới được **thêm vào buổi đang có**,
+không tạo buổi trùng. Ràng buộc duy nhất `(student, date, period)` nằm ở `self_study_sessions`
+chứ không còn ở `plans`.
+
+Sau giờ tự học, mỗi nhiệm vụ chưa có kết quả hiện một **nút lớn "Cập nhật kết quả"** ngay
+dưới dòng nhiệm vụ — trước đây phải đoán rằng bấm vào dòng sẽ mở popup.
+
+Minh chứng có **bốn dạng** (`evidence.kind`), tối đa 3 mục mỗi nhiệm vụ:
+
+| kind | Lưu ở | Dùng khi |
+|---|---|---|
+| `text` | `body_text` (1–2000 ký tự) | Sản phẩm nằm trong vở — chỉ cần tả lại đã làm gì |
+| `image` / `file` | Storage `evidence/`, signed URL | Ảnh chụp bài, PDF ≤ 5 MB |
+| `link` | `external_url` | Canva, Google Docs, Padlet… |
+
+`kind='text'` là bổ sung mới; ràng buộc `evidence_location` chặn text rỗng, và chặn nhầm
+lẫn giữa ba dạng (text không được có `storage_path`/`external_url`, và ngược lại).
 
 ## 9. Hạn cập nhật kết quả — tự động hóa
 

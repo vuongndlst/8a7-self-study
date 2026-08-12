@@ -206,3 +206,75 @@ tbody tr.clickable.picked:hover td{background:var(--mint2)}
 .missing-chip{border:1px solid #eed9b4;background:var(--warn-bg);border-radius:12px;padding:10px 12px}
 .missing-chip strong{display:block;font-size:13.5px}
 .missing-chip small{display:block;color:#8a6a2f;font-size:11.5px;margin-top:3px}
+
+/* ---------- v7: dang ky buoi tu hoc nhieu nhiem vu ---------- */
+.register-card{padding:24px;margin-bottom:22px}
+.reg-step{display:flex;gap:14px;align-items:flex-start;padding:16px 0;border-top:1px solid var(--line)}
+.reg-step:first-of-type{border-top:0;padding-top:6px}
+.reg-step>div{flex:1;min-width:0}
+.reg-num{flex:0 0 auto;width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px;margin-top:2px}
+.reg-step input[type=date]{max-width:220px}
+.period-grid{display:grid;grid-template-columns:repeat(3,minmax(0,86px));gap:8px;margin:6px 0 4px}
+.period-cell{height:52px;border:1px solid var(--line);background:#fff;border-radius:13px;font-size:17px;font-weight:750;color:#3d4f47;cursor:pointer;transition:.15s}
+.period-cell:hover:not(.off){border-color:var(--green2);background:#f7faf8}
+.period-cell.on{background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 6px 16px rgba(23,63,49,.2)}
+.period-cell.off{opacity:.3;cursor:not-allowed;background:#f4f6f5}
+.task-block{border:1px solid var(--line);border-radius:15px;padding:15px;margin:12px 0;background:#fbfdfc}
+.task-block-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.task-block-head strong{font-size:13px;color:var(--green2);letter-spacing:.3px}
+.toggle-row.compact{margin:0;align-items:center}
+.toggle-row.compact strong{display:flex;align-items:center;gap:6px;font-size:13.5px}
+.summary-tasks{margin:8px 0 0;padding-left:20px;display:grid;gap:7px}
+.summary-tasks li{line-height:1.55}
+.summary-tasks em{color:var(--muted);font-style:normal;font-size:12.5px}
+.notice.compact{padding:9px 11px;font-size:13px;margin:8px 0}
+@media(max-width:700px){.period-grid{grid-template-columns:repeat(3,1fr)}}
+
+/* ---------- The buoi tu hoc gom nhieu nhiem vu ---------- */
+.session-card{padding:18px}
+.session-meta{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin:10px 0 4px;font-size:13px}
+.session-meta strong{font-size:15px}
+.session-tasks{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:7px}
+.task-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:#fbfdfc;border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;transition:.15s}
+.task-row:hover{border-color:var(--green2);background:#f4f9f6}
+.task-row.alarm-red{border-color:#e6a3a3;background:var(--danger-bg)}
+.task-row.alarm-amber{border-color:#e8c584;background:var(--warn-bg)}
+.task-row-main{flex:1;min-width:0}
+.task-row-main strong{display:block;font-size:14px}
+.task-row-main small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-row-side{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:0 0 auto;max-width:52%}
+.task-row>svg{flex:0 0 auto;color:#9aa79f}
+@media(max-width:700px){.task-row{flex-wrap:wrap}.task-row-side{max-width:100%;justify-content:flex-start;width:100%}}
+
+/* ---------- Anh dai dien ---------- */
+.avatar{display:inline-grid;place-items:center;border-radius:50%;object-fit:cover;flex:0 0 auto;font-weight:800;letter-spacing:.2px;border:1px solid rgba(0,0,0,.06)}
+.avatar.initials{user-select:none}
+.heading-with-avatar{display:flex;gap:16px;align-items:flex-start}
+.avatar-button{position:relative;background:none;border:0;padding:0;cursor:pointer;line-height:0;flex:0 0 auto}
+.avatar-edit-dot{position:absolute;right:-2px;bottom:-2px;width:22px;height:22px;border-radius:50%;background:var(--green);color:#fff;font-size:11px;display:grid;place-items:center;border:2px solid #fff}
+.avatar-editor{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:6px 0 12px}
+.avatar-preview{width:128px;height:128px;border-radius:50%;object-fit:cover;border:1px solid var(--line)}
+.avatar-editor>div{flex:1;min-width:200px}
+td .cell-with-avatar{display:flex;align-items:center;gap:9px}
+td .cell-with-avatar>span:last-child{min-width:0}
+@media(max-width:700px){.heading-with-avatar{gap:12px}}
+
+/* ---------- Nut cap nhat ket qua ---------- */
+.session-tasks>li{display:grid;gap:6px}
+.task-cta{width:100%;justify-content:center;font-size:14.5px;padding:10px 14px}
+.task-cta.primary{font-weight:800;letter-spacing:.2px;box-shadow:0 2px 8px rgba(37,115,86,.22)}
+.session-cta-hint{margin:10px 0 0;font-size:13px;color:var(--muted)}
+.button.big{font-size:16px;padding:13px 22px;font-weight:800}
+.evidence-list{display:grid;gap:6px;margin:6px 0 10px}
+.evidence-row{display:flex;gap:6px;align-items:stretch}
+.evidence-row>.evidence-item:first-child{flex:1;text-align:left;justify-content:flex-start;min-width:0}
+.stat-card.alert strong{color:var(--danger)}
+
+/* ---------- Guide tip: khoi van ban, khong phai hang flex ----------
+   De nguyen display:flex thi moi <strong> bi bien thanh mot cot rieng,
+   cau van bi cat vun thanh cac o canh nhau. */
+.guide-tip{display:block;line-height:1.65;font-size:12.5px}
+.guide-tip>svg{float:left;margin:3px 8px 2px 0}
+.guide-tip>span{display:block;overflow:hidden}
+.tip-list{margin:6px 0;padding-left:18px;display:grid;gap:3px}
+.tip-list li{list-style:disc}

@@ -7,6 +7,8 @@ import { passwordChecks, validateStudentPassword } from '../utils/password'
 import StatusBadge from '../components/StatusBadge'
 import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
 import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
+import SessionRegister from '../components/SessionRegister'
+import Avatar, { AvatarUploader } from '../components/Avatar'
 
 const activityOptions=['Bài tập cá nhân','Ôn tập','Công việc nhóm','Đọc sách','Chuẩn bị nội dung chia sẻ','Khác']
 const subjectOptions=['Toán','Ngữ văn','Tiếng Anh','Khoa học tự nhiên','Lịch sử & Địa lý','GDCD','Tin học','Công nghệ','Nghệ thuật','Khác']
@@ -28,9 +30,14 @@ export default function StudentPage(){
   const [showPassword,setShowPassword]=useState(false)
   const [showChat,setShowChat]=useState(false)
   const [conversationId,setConversationId]=useState(null)
+  const [showAvatar,setShowAvatar]=useState(false)
 
   const load=async()=>{
-    const {data:p}=await supabase.from('plans').select('*').order('study_date',{ascending:false}).order('period',{ascending:true})
+    if(!profile?.id)return
+    // Lọc theo chính em đang đăng nhập. RLS cho trợ giảng đọc được cả lớp,
+    // nên nếu không lọc thì trang "kế hoạch của em" sẽ lẫn kế hoạch của bạn khác.
+    const {data:p}=await supabase.from('plans').select('*').eq('student_id',profile.id)
+      .order('study_date',{ascending:false}).order('period',{ascending:true})
     const planList=p||[]
     setPlans(planList)
     if(planList.length){
@@ -46,7 +53,7 @@ export default function StudentPage(){
       setStatus(Object.fromEntries((s||[]).map(x=>[x.plan_id,x])))
     }else{setReflections({});setEvidence({});setStatus({})}
   }
-  useEffect(()=>{load()},[])
+  useEffect(()=>{load()},[profile?.id])
 
   const submitPlan=async(e)=>{
     e.preventDefault();setMessage('')
@@ -68,14 +75,26 @@ export default function StudentPage(){
     setForm(emptyPlan);setShowForm(false);setMessage('✓ Đã lưu kế hoạch tự học.');load()
   }
 
-  const upcoming=useMemo(()=>plans.filter(p=>p.study_date>=todayISO()),[plans])
-  const past=useMemo(()=>plans.filter(p=>p.study_date<todayISO()),[plans])
+  // Gom nhiệm vụ theo BUỔI: một buổi có thể có nhiều nhiệm vụ.
+  const sessions=useMemo(()=>{
+    const m=new Map()
+    for(const p of plans){
+      const k=p.session_id??`${p.study_date}-${p.period}`
+      if(!m.has(k))m.set(k,{key:k,study_date:p.study_date,period:p.period,tasks:[]})
+      m.get(k).tasks.push(p)
+    }
+    return [...m.values()]
+      .map(s=>({...s,tasks:s.tasks.sort((a,b)=>a.created_at.localeCompare(b.created_at))}))
+      .sort((a,b)=>b.study_date.localeCompare(a.study_date)||a.period-b.period)
+  },[plans])
+  const upcoming=useMemo(()=>sessions.filter(s=>s.study_date>=todayISO()),[sessions])
+  const past=useMemo(()=>sessions.filter(s=>s.study_date<todayISO()),[sessions])
   const onTimeCount=plans.filter(p=>registrationStatus(p.study_date,p.created_at)==='Đúng hạn').length
   const completedCount=Object.values(reflections).filter(r=>r.completion_status==='Hoàn thành').length
   const evidenceCount=Object.values(evidence).reduce((sum,list)=>sum+list.length,0)
   const onTimeRate=plans.length?Math.round(onTimeCount/plans.length*100):0
-  // Tiết đã qua mà chưa cập nhật kết quả — nhắc ngay trên đầu trang.
-  const pendingReflections=past.filter(p=>!reflections[p.id]).length
+  // Nhiệm vụ (không phải buổi) đã qua mà chưa cập nhật kết quả.
+  const pendingReflections=past.reduce((n,s)=>n+s.tasks.filter(t=>!reflections[t.id]).length,0)
   const newComments=Object.values(reflections).filter(r=>r.teacher_comment).length
   const rated=Object.values(reflections).filter(r=>r.rating!=null)
   const avgRating=rated.length?(rated.reduce((s,r)=>s+r.rating,0)/rated.length).toFixed(1):null
@@ -92,10 +111,16 @@ export default function StudentPage(){
 
   return <div className="page">
     <section className="dashboard-heading">
-      <div>
+      <div className="heading-with-avatar">
+        <button type="button" className="avatar-button" onClick={()=>setShowAvatar(true)} title="Đổi ảnh đại diện">
+          <Avatar name={profile?.full_name} path={profile?.avatar_path} size={64}/>
+          <span className="avatar-edit-dot">✎</span>
+        </button>
+        <div>
         <span className="eyebrow">KẾ HOẠCH CỦA EM</span>
         <h1>Chào {profile?.full_name}</h1>
         <p>MSHS: <strong>{profile?.mshs}</strong>{context.className?<> · Lớp <strong>{context.className}</strong>{context.yearName?` (${context.yearName})`:''}</>:null} · Lập kế hoạch trước, thực hiện có mục tiêu, rồi nhìn lại kết quả.</p>
+        </div>
       </div>
       <div className="button-row">
         <button className="button ghost" onClick={openChat}><MessageSquare size={17}/> Nhắn giáo viên</button>
@@ -105,9 +130,9 @@ export default function StudentPage(){
     </section>
 
     <section className="student-summary">
-      <Stat label="Kế hoạch sắp tới" value={upcoming.length}/>
+      <Stat label="Buổi sắp tới" value={upcoming.length}/>
       <Stat label="Đúng hạn" value={`${onTimeRate}%`}/>
-      <Stat label="Đã hoàn thành" value={completedCount}/>
+      <Stat label="Nhiệm vụ hoàn thành" value={completedCount}/>
       <Stat label="Điểm trung bình" value={avgRating?`${avgRating}/5`:'—'}/>
     </section>
 
@@ -123,22 +148,25 @@ export default function StudentPage(){
     {pendingReflections>0&&overdue.length===0&&<div className="notice warning"><ShieldCheck size={18}/><span>Em còn <strong>{pendingReflections} tiết</strong> đã qua mà chưa cập nhật kết quả. Mở thẻ ở mục “Lịch sử gần đây” để bổ sung.</span></div>}
     {newComments>0&&<div className="notice"><MessageSquareQuote size={18}/><span>Giáo viên đã nhận xét <strong>{newComments}</strong> lần phản tư của em.</span></div>}
     {message&&<div className="notice"><ShieldCheck size={18}/><span>{message}</span></div>}
-    {showForm&&<PlanForm form={form} setForm={setForm} onSubmit={submitPlan} busy={busy}/>}
+    {showForm&&<SessionRegister
+      onCancel={()=>setShowForm(false)}
+      onDone={()=>{setShowForm(false);setMessage('✓ Đã đăng ký buổi tự học.');load()}}/>}
 
     <section className="section-block">
       <div className="section-title"><div><h2>Sắp tới</h2><p>Các kế hoạch từ hôm nay trở đi. Kế hoạch tương lai có thể chỉnh sửa hoặc xóa.</p></div><button className="icon-button" onClick={load} title="Làm mới"><RefreshCw size={18}/></button></div>
-      {upcoming.length===0?<EmptyState text="Chưa có kế hoạch sắp tới."/>:<div className="plan-grid">{upcoming.map(p=><PlanCard key={p.id} plan={p} reflection={reflections[p.id]} evidence={evidence[p.id]||[]} progress={status[p.id]} onOpen={()=>setOpenPlan(p)} onChanged={load}/>)}</div>}
+      {upcoming.length===0?<EmptyState text="Chưa có buổi tự học sắp tới."/>:<div className="plan-grid">{upcoming.map(s=><SessionCard key={s.key} session={s} reflections={reflections} evidence={evidence} status={status} onOpen={setOpenPlan} onChanged={load}/>)}</div>}
     </section>
 
     <section className="section-block">
       <div className="section-title"><div><h2>Lịch sử gần đây</h2><p>Sau giờ tự học, cập nhật kết quả và minh chứng nếu có.</p></div></div>
-      {past.length===0?<EmptyState text="Chưa có lịch sử tự học."/>:<div className="plan-grid">{past.slice(0,15).map(p=><PlanCard key={p.id} plan={p} reflection={reflections[p.id]} evidence={evidence[p.id]||[]} progress={status[p.id]} onOpen={()=>setOpenPlan(p)} onChanged={load}/>)}</div>}
+      {past.length===0?<EmptyState text="Chưa có lịch sử tự học."/>:<div className="plan-grid">{past.slice(0,15).map(s=><SessionCard key={s.key} session={s} reflections={reflections} evidence={evidence} status={status} onOpen={setOpenPlan} onChanged={load}/>)}</div>}
     </section>
 
     {openPlan&&(openPlan.study_date>todayISO()
       ?<EditPlanModal plan={openPlan} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>
       :<ReflectionModal plan={openPlan} existing={reflections[openPlan.id]} evidence={evidence[openPlan.id]||[]} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>)}
     {showPassword&&<ChangePasswordModal mshs={profile?.mshs} onClose={()=>setShowPassword(false)}/>}
+    {showAvatar&&<AvatarUploader onClose={()=>setShowAvatar(false)}/>}
     {showChat&&<div className="modal-backdrop" onMouseDown={()=>setShowChat(false)}>
       <div className="modal" onMouseDown={e=>e.stopPropagation()}>
         <div className="modal-head"><div><span className="eyebrow">TIN NHẮN</span><h2>Hỏi giáo viên</h2></div><button className="icon-button" onClick={()=>setShowChat(false)}>✕</button></div>
@@ -176,6 +204,83 @@ function PlanForm({form,setForm,onSubmit,busy}){
     <label>Nếu hoàn thành sớm</label><select value={form.fallback_activity} onChange={e=>update('fallback_activity',e.target.value)}>{fallbackOptions.map(x=><option key={x}>{x}</option>)}</select>
     <div className="form-actions"><button type="button" className="button ghost" onClick={()=>setForm(emptyPlan)}>Làm lại</button><button className="button primary" disabled={busy}>{busy?'Đang lưu…':'Đăng ký kế hoạch'}</button></div>
   </form>
+}
+
+// Một thẻ = một BUỔI tự học, bên trong liệt kê các nhiệm vụ của buổi đó.
+function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
+  const {study_date,period,tasks}=session
+  const editable=study_date>todayISO()
+  const regStatus=registrationStatus(study_date,tasks[0]?.created_at)
+  // Trạng thái buổi suy ra từ các nhiệm vụ — giống hệt cách CSDL tính.
+  const done=tasks.filter(t=>reflections[t.id]).length
+  const pending=tasks.length-done
+  const late=tasks.filter(t=>['Trễ hạn cập nhật','Hệ thống tự đánh giá'].includes(status[t.id]?.progress)).length
+  const worst=tasks.reduce((m,t)=>{const r=reflections[t.id]?.rating;return r!=null&&(m==null||r<m)?r:m},null)
+  const tone=ratingTone(worst)
+  const needsAck=tasks.some(t=>{const r=reflections[t.id];return r?.rating!=null&&r.rating<=2&&!r.student_ack_at})
+
+  const removeSession=async(e)=>{
+    e.stopPropagation()
+    if(!window.confirm(`Xóa cả buổi tự học ngày ${formatDate(study_date)} tiết ${period} (${tasks.length} nhiệm vụ)?`))return
+    const {error}=await supabase.from('plans').delete().in('id',tasks.map(t=>t.id))
+    if(error)return window.alert('Không thể xóa buổi này.')
+    if(session.key&&tasks[0]?.session_id)await supabase.from('self_study_sessions').delete().eq('id',tasks[0].session_id)
+    onChanged()
+  }
+
+  return <article className={`card session-card ${tone}`}>
+    <div className="plan-card-top">
+      <span className="date-chip">{formatDate(study_date)} · Tiết {period}</span>
+      <span className="plan-card-actions">
+        <StatusBadge value={regStatus}/>
+        {editable&&<button type="button" className="icon-button danger" title="Xóa cả buổi" onClick={removeSession}><Trash2 size={15}/></button>}
+      </span>
+    </div>
+
+    <div className="session-meta">
+      <strong>{tasks.length} nhiệm vụ</strong>
+      <span className="muted-text">· đã cập nhật {done}/{tasks.length}</span>
+      {late>0&&<span className="help-flag">· {late} trễ hạn</span>}
+    </div>
+    {needsAck&&<div className="ack-warning"><AlertTriangle size={14}/><span>Có nhiệm vụ em cần viết phản hồi</span></div>}
+
+    <ul className="session-tasks">{tasks.map(t=>{
+      const r=reflections[t.id];const st=status[t.id];const ev=evidence[t.id]||[]
+      return <li key={t.id}>
+        <button type="button" className={`task-row ${ratingTone(r?.rating)}`} onClick={()=>onOpen(t)}>
+          <span className="task-row-main">
+            <strong>{t.subject==='Khác'&&t.subject_other?t.subject_other:t.subject}</strong>
+            <small>{t.task}</small>
+          </span>
+          <span className="task-row-side">
+            {t.use_device&&<StatusBadge value={t.review_status} label={t.review_status==='Chờ duyệt'?'💻 chờ duyệt':'💻'}/>}
+            {r?<StatusBadge value={r.completion_status}/>
+              :st?.progress&&st.progress!=='Chưa tới buổi'?<StatusBadge value={st.progress}/>
+              :<span className="muted-text small">chưa cập nhật</span>}
+            {r?.rating!=null&&<RatingStars value={r.rating} readOnly size={13}/>}
+            {ev.length>0&&<span className="muted-text small">📎{ev.length}</span>}
+          </span>
+          <ChevronDown size={15}/>
+        </button>
+        {/* Cập nhật kết quả là việc quan trọng nhất sau giờ tự học — cho nó một
+            nút riêng, to rõ, thay vì bắt em đoán rằng bấm vào dòng sẽ ra. */}
+        {!editable&&(r
+          ? <button type="button" className="button ghost task-cta" onClick={()=>onOpen(t)}>
+              <MessageSquareQuote size={16}/> Xem lại / bổ sung kết quả
+            </button>
+          : <button type="button" className="button primary task-cta" onClick={()=>onOpen(t)}>
+              <FileUp size={18}/> Cập nhật kết quả
+            </button>)}
+        {editable&&<button type="button" className="button ghost task-cta" onClick={()=>onOpen(t)}>
+          Chỉnh sửa nhiệm vụ
+        </button>}
+      </li>
+    })}</ul>
+
+    {!editable&&pending>0&&<p className="session-cta-hint">
+      Còn <strong>{pending}</strong> nhiệm vụ chưa có kết quả. Cập nhật sớm để thầy cô theo dõi đúng tiến độ nhé.
+    </p>}
+  </article>
 }
 
 function PlanCard({plan,reflection,evidence,progress,onOpen,onChanged}){
@@ -259,7 +364,8 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
   const [ack,setAck]=useState(existing?.student_ack_note||'')
   const [ackBusy,setAckBusy]=useState(false)
   const [ackMsg,setAckMsg]=useState('')
-  const [link,setLink]=useState('');const [file,setFile]=useState(null);const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('')
+  const [link,setLink]=useState('');const [file,setFile]=useState(null);const [note,setNote]=useState('')
+  const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('')
   const lowRating=existing?.rating!=null&&existing.rating<=2
 
   const saveAck=async()=>{
@@ -275,8 +381,9 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
 
   const save=async()=>{
     setBusy(true);setMsg('')
-    const additions=(link.trim()?1:0)+(file?1:0)
+    const additions=(link.trim()?1:0)+(file?1:0)+(note.trim()?1:0)
     if(evidence.length+additions>3){setBusy(false);return setMsg('Tối đa 3 minh chứng cho mỗi tiết.')}
+    if(note.trim()&&note.trim().length<10){setBusy(false);return setMsg('Phần mô tả kết quả cần ít nhất 10 ký tự để thầy cô hiểu em đã làm gì.')}
     if(form.need_help&&!form.help_note.trim()){setBusy(false);return setMsg('Hãy ghi ngắn gọn điều em cần hỗ trợ.')}
     if(link.trim()){try{new URL(link.trim())}catch{setBusy(false);return setMsg('Liên kết minh chứng chưa hợp lệ.')}}
     if(file){
@@ -299,9 +406,19 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
       const {error:e}=await supabase.from('evidence').insert({plan_id:plan.id,student_id:plan.student_id,kind:file.type.startsWith('image/')?'image':'file',storage_path:path,display_name:file.name})
       if(e){await supabase.storage.from('evidence').remove([path]);setBusy(false);return setMsg('Không thể ghi nhận file minh chứng.')}
     }
+    if(note.trim()){
+      const {error:e}=await supabase.from('evidence').insert({plan_id:plan.id,student_id:plan.student_id,kind:'text',
+        body_text:note.trim().slice(0,2000),display_name:'Mô tả kết quả'})
+      if(e){setBusy(false);return setMsg('Đã lưu kết quả nhưng chưa thêm được phần mô tả.')}
+    }
     setBusy(false);onSaved()
   }
-  const openEvidence=async(item)=>{if(item.kind==='link')return window.open(item.external_url,'_blank','noopener,noreferrer');const {data}=await supabase.storage.from('evidence').createSignedUrl(item.storage_path,120);if(data?.signedUrl)window.open(data.signedUrl,'_blank','noopener,noreferrer')}
+  const openEvidence=async(item)=>{
+    if(item.kind==='text')return window.alert(item.body_text||'')
+    if(item.kind==='link')return window.open(item.external_url,'_blank','noopener,noreferrer')
+    const {data}=await supabase.storage.from('evidence').createSignedUrl(item.storage_path,120)
+    if(data?.signedUrl)window.open(data.signedUrl,'_blank','noopener,noreferrer')
+  }
   const removeEvidence=async(item)=>{
     if(!window.confirm('Xóa minh chứng này?'))return
     if(item.storage_path)await supabase.storage.from('evidence').remove([item.storage_path])
@@ -339,11 +456,26 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
     <div className="toggle-row"><label className="switch"><input type="checkbox" checked={form.need_help} onChange={e=>setForm({...form,need_help:e.target.checked})}/><span/></label><div><strong>Em cần giáo viên hỗ trợ</strong><small>Bật khi em còn vướng và muốn giáo viên biết.</small></div></div>
     {form.need_help&&<input maxLength={500} value={form.help_note} onChange={e=>setForm({...form,help_note:e.target.value})} placeholder="Em cần hỗ trợ về…"/>}
     <div className="evidence-block"><h3>Minh chứng <span className="muted-text">(tùy chọn, tối đa 3)</span></h3>
-      {evidence.map(x=><span key={x.id}><button type="button" className="evidence-item" onClick={()=>openEvidence(x)}>{x.kind==='link'?'🔗':'📎'} {x.display_name||'Minh chứng'} <ExternalLink size={14}/></button><button type="button" className="evidence-item" onClick={()=>removeEvidence(x)}>✕</button></span>)}
-      {evidence.length<3&&<><label>Upload ảnh/PDF (≤ 5 MB)</label><input type="file" accept="image/jpeg,image/png,application/pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/><label>Hoặc dán liên kết sản phẩm</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://…"/></>}
+      <p className="muted-text small">Em nộp theo cách nào cũng được: <strong>liên kết</strong>, <strong>ảnh/file</strong>, hoặc chỉ cần <strong>mô tả bằng chữ</strong> nếu sản phẩm nằm trong vở.</p>
+      {evidence.length>0&&<div className="evidence-list">{evidence.map(x=><span key={x.id} className="evidence-row">
+        <button type="button" className="evidence-item" onClick={()=>openEvidence(x)}>
+          {x.kind==='link'?'🔗':x.kind==='text'?'📝':'📎'} {x.kind==='text'?(x.body_text||'').slice(0,60)+((x.body_text||'').length>60?'…':''):(x.display_name||'Minh chứng')}
+          {x.kind!=='text'&&<ExternalLink size={14}/>}
+        </button>
+        <button type="button" className="evidence-item" title="Xóa minh chứng" onClick={()=>removeEvidence(x)}>✕</button>
+      </span>)}</div>}
+      {evidence.length<3&&<>
+        <label>Mô tả kết quả bằng chữ</label>
+        <textarea rows="2" maxLength={2000} value={note} onChange={e=>setNote(e.target.value)}
+                  placeholder="Ví dụ: Em đã làm xong bài 5–10 trang 24 trong vở Toán, có tự dò lại đáp án."/>
+        <label>Upload ảnh/PDF (≤ 5 MB)</label>
+        <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/>
+        <label>Liên kết sản phẩm</label>
+        <input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://…"/>
+      </>}
     </div>
     {msg&&<div className="form-error">{msg}</div>}
-    <div className="form-actions"><button className="button ghost" onClick={onClose}>Đóng</button><button className="button primary" onClick={save} disabled={busy}><FileUp size={17}/>{busy?'Đang lưu…':'Lưu kết quả'}</button></div>
+    <div className="form-actions"><button className="button ghost" onClick={onClose}>Đóng</button><button className="button primary big" onClick={save} disabled={busy}><FileUp size={19}/>{busy?'Đang lưu…':'Lưu kết quả'}</button></div>
   </div></div>
 }
 

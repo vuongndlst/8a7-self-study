@@ -22,3 +22,5 @@ admin/*.csv
 !admin/class.example.json
 
 .claude/
+
+_test-session.mjs

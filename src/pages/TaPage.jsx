@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LifeBuoy, MessageSquare, RefreshCw, Search, ShieldCheck } from 'lucide-react'
+import { LifeBuoy, MessageSquare, RefreshCw, Search, ShieldCheck, UserX } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, registrationStatus, todayISO } from '../utils/date'
 import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
 import RatingStars from '../components/RatingStars'
 import StatusBadge from '../components/StatusBadge'
+import Avatar from '../components/Avatar'
+
+const PAGE_SIZE = 25
 
 const shiftISO = (n) => {
   const d = new Date(todayISO() + 'T00:00:00Z')
@@ -31,28 +34,32 @@ export default function TaPage() {
   const [people, setPeople] = useState({})
   const [help, setHelp] = useState([])
   const [reflections, setReflections] = useState({})
+  const [missing, setMissing] = useState([])
+  const [missingDate, setMissingDate] = useState(shiftISO(1))
   const [range, setRange] = useState('tomorrow')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [chatWith, setChatWith] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
     setLoading(true)
-    const jobs = []
-    if (assistant?.can_view_plans) {
-      jobs.push(supabase.from('plans').select('*').order('study_date', { ascending: false }).order('period'))
-    } else jobs.push(Promise.resolve({ data: [] }))
-    if (assistant?.can_view_help) {
-      jobs.push(supabase.from('help_requests').select('*').eq('help_resolved', false).order('study_date', { ascending: false }))
-    } else jobs.push(Promise.resolve({ data: [] }))
-    jobs.push(supabase.from('profiles').select('id,full_name,mshs').eq('role', 'student'))
-
-    const [{ data: p }, { data: h }, { data: pr }] = await Promise.all(jobs)
+    // Mỗi truy vấn chỉ chạy khi quyền tương ứng được bật. Không phải để "giấu"
+    // — RLS đằng nào cũng chặn — mà để khỏi gọi thừa và khỏi hiểu nhầm ô trống
+    // là "lớp không có dữ liệu" trong khi thật ra là "em chưa được cấp quyền".
+    const [{ data: p }, { data: h }, { data: pr }] = await Promise.all([
+      assistant?.can_view_plans
+        ? supabase.from('plans').select('*').order('study_date', { ascending: false }).order('period')
+        : Promise.resolve({ data: [] }),
+      assistant?.can_view_help
+        ? supabase.from('help_requests').select('*').eq('help_resolved', false).order('study_date', { ascending: false })
+        : Promise.resolve({ data: [] }),
+      supabase.from('profiles').select('id,full_name,mshs,avatar_path').eq('role', 'student'),
+    ])
     setPlans(p ?? [])
     setHelp(h ?? [])
     setPeople(Object.fromEntries((pr ?? []).map((x) => [x.id, x])))
 
-    // Chỉ đọc phản tư khi được bật quyền — nếu không, RLS trả rỗng.
     if (assistant?.can_view_reflections && (p ?? []).length) {
       const { data: r } = await supabase.from('reflections').select('*').in('plan_id', p.map((x) => x.id))
       setReflections(Object.fromEntries((r ?? []).map((x) => [x.plan_id, x])))
@@ -60,7 +67,14 @@ export default function TaPage() {
     setLoading(false)
   }
 
-  useEffect(() => { if (assistant) load() }, [assistant?.class_id])
+  const checkMissing = async (d) => {
+    if (!assistant?.can_view_plans || !context.classId) return
+    const { data } = await supabase.rpc('missing_registrations', { p_class: context.classId, p_date: d })
+    setMissing(data ?? [])
+  }
+
+  useEffect(() => { if (assistant) { load(); checkMissing(missingDate) } }, [assistant?.class_id])
+  useEffect(() => { setPage(1) }, [range, search])
 
   const rows = useMemo(() => {
     const today = todayISO(); const tmr = shiftISO(1)
@@ -75,6 +89,33 @@ export default function TaPage() {
     })
   }, [plans, range, search, people])
 
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const pageRows = useMemo(() => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [rows, page])
+
+  // Thống kê tính trên ĐÚNG khoảng đang xem, để con số khớp với bảng bên dưới.
+  const stats = useMemo(() => {
+    const studentsInView = new Set(rows.map((p) => p.student_id))
+    const past = rows.filter((p) => p.study_date < todayISO())
+    return {
+      tasks: rows.length,
+      students: studentsInView.size,
+      device: rows.filter((p) => p.use_device).length,
+      devicePending: rows.filter((p) => p.use_device && p.device_status === 'Chờ duyệt').length,
+      late: rows.filter((p) => registrationStatus(p.study_date, p.created_at) !== 'Đúng hạn').length,
+      noResult: past.filter((p) => !reflections[p.id]).length,
+      pastCount: past.length,
+    }
+  }, [rows, reflections])
+
+  const missingList = useMemo(() => {
+    const by = missing.reduce((acc, r) => {
+      (acc[r.student_id] ||= { name: r.full_name, mshs: r.mshs, periods: [] })
+      if (r.period != null) acc[r.student_id].periods.push(r.period)
+      return acc
+    }, {})
+    return Object.values(by).sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+  }, [missing])
+
   const openChat = async (studentId) => {
     const id = await getOrCreateConversation(context.classId, studentId)
     setChatWith({ id, name: people[studentId]?.full_name ?? '' })
@@ -85,16 +126,30 @@ export default function TaPage() {
   }
 
   const granted = Object.keys(PERM_LABEL).filter((k) => assistant[k])
+  const rangeLabel = { today: 'hôm nay', tomorrow: 'ngày mai', past: 'các ngày đã qua', all: 'tất cả các ngày' }[range]
 
   return <div className="page">
     <section className="dashboard-heading">
-      <div>
-        <span className="eyebrow"><LifeBuoy size={13} /> TRỢ GIẢNG</span>
-        <h1>Hỗ trợ lớp {context.className}</h1>
-        <p>Chào {profile?.full_name} — em đang giúp giáo viên theo dõi giờ tự học của lớp.</p>
+      <div className="heading-with-avatar">
+        <Avatar name={profile?.full_name} path={profile?.avatar_path} size={56} />
+        <div>
+          <span className="eyebrow"><LifeBuoy size={13} /> TRỢ GIẢNG</span>
+          <h1>Hỗ trợ lớp {context.className}</h1>
+          <p>Chào {profile?.full_name} — em đang giúp giáo viên theo dõi giờ tự học của lớp.
+             Đây là trang của cả lớp; kế hoạch riêng của em vẫn ở mục <strong>Kế hoạch của em</strong>.</p>
+        </div>
       </div>
-      <div className="button-row"><button className="button ghost" onClick={load}><RefreshCw size={17} /> Làm mới</button></div>
+      <div className="button-row"><button className="button ghost" onClick={() => { load(); checkMissing(missingDate) }}><RefreshCw size={17} /> Làm mới</button></div>
     </section>
+
+    {assistant.can_view_plans && <section className="stats-grid">
+      <Stat label={`Nhiệm vụ ${rangeLabel}`} value={stats.tasks} />
+      <Stat label="Số bạn có kế hoạch" value={stats.students} />
+      <Stat label="Đăng ký trễ" value={stats.late} alert={stats.late > 0} />
+      <Stat label="Có dùng thiết bị" value={stats.device} />
+      <Stat label="Thiết bị chờ duyệt" value={stats.devicePending} alert={stats.devicePending > 0} />
+      <Stat label="Đã qua, chưa có kết quả" value={stats.pastCount ? stats.noResult : '—'} alert={stats.noResult > 0} />
+    </section>}
 
     <section className="card perm-card">
       <span className="eyebrow"><ShieldCheck size={13} /> QUYỀN GIÁO VIÊN ĐÃ CẤP CHO EM</span>
@@ -114,7 +169,10 @@ export default function TaPage() {
               <span className="date-chip">{formatDate(h.study_date)} · Tiết {h.period}</span>
               <StatusBadge value="Chờ duyệt" label="Cần hỗ trợ" />
             </div>
-            <h3>{people[h.student_id]?.full_name ?? '—'}</h3>
+            <h3><span className="cell-with-avatar">
+              <Avatar name={people[h.student_id]?.full_name} path={people[h.student_id]?.avatar_path} size={28} />
+              <span>{people[h.student_id]?.full_name ?? '—'}</span>
+            </span></h3>
             <p>{h.subject} — {h.help_note}</p>
             {assistant.can_chat && <div className="plan-footer">
               <button className="button ghost" onClick={() => openChat(h.student_id)}><MessageSquare size={15} /> Nhắn cho bạn</button>
@@ -123,8 +181,30 @@ export default function TaPage() {
     </section>}
 
     {assistant.can_view_plans && <section className="section-block">
+      <div className="section-title"><div>
+        <h2><UserX size={19} /> Bạn chưa đăng ký</h2>
+        <p>Chọn ngày để nhắc những bạn chưa có kế hoạch tự học.</p>
+      </div></div>
+      <div className="card sched-card">
+        <div className="check-row">
+          <input type="date" value={missingDate} onChange={(e) => { setMissingDate(e.target.value); checkMissing(e.target.value) }} />
+          <button className="button ghost" onClick={() => { setMissingDate(todayISO()); checkMissing(todayISO()) }}>Hôm nay</button>
+          <button className="button ghost" onClick={() => { setMissingDate(shiftISO(1)); checkMissing(shiftISO(1)) }}>Ngày mai</button>
+        </div>
+        {missingList.length === 0
+          ? <div className="empty-state"><p>✓ Tất cả các bạn đã có kế hoạch cho ngày này.</p></div>
+          : <>
+              <div className="notice warning"><UserX size={17} /><span><strong>{missingList.length} bạn</strong> chưa đăng ký cho ngày {missingDate.split('-').reverse().join('/')}.</span></div>
+              <div className="missing-grid">{missingList.map((s) => <div key={s.mshs} className="missing-chip">
+                <strong>{s.name}</strong><small>{s.mshs}{s.periods.length ? ` · thiếu tiết ${s.periods.sort((a, b) => a - b).join(', ')}` : ''}</small>
+              </div>)}</div>
+            </>}
+      </div>
+    </section>}
+
+    {assistant.can_view_plans ? <section className="section-block">
       <div className="section-title">
-        <div><h2>Kế hoạch của lớp</h2><p>Xem bạn nào đã đăng ký, bạn nào chưa.</p></div>
+        <div><h2>Kế hoạch của lớp</h2><p>Mỗi dòng là một nhiệm vụ. Một bạn có thể đăng ký nhiều nhiệm vụ trong cùng một tiết.</p></div>
       </div>
       <div className="card filters">
         <div className="search-box"><Search size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm tên, MSHS, môn…" /></div>
@@ -136,27 +216,39 @@ export default function TaPage() {
         </select>
       </div>
       <div className="card table-card">
-        {loading ? <div className="empty-state">Đang tải…</div> : <div className="table-wrap"><table>
-          <thead><tr><th>Bạn</th><th>Ngày / Tiết</th><th>Nội dung</th><th>Đăng ký</th>
+        {loading ? <div className="empty-state">Đang tải…</div> : <><div className="table-wrap"><table>
+          <thead><tr><th>Bạn</th><th>Ngày / Tiết</th><th>Nội dung</th><th>Đăng ký</th><th>Thiết bị</th>
             {assistant.can_view_reflections && <th>Kết quả</th>}
             {assistant.can_chat && <th>Nhắn tin</th>}</tr></thead>
-          <tbody>{rows.map((p) => {
+          <tbody>{pageRows.map((p) => {
             const s = people[p.student_id] ?? {}
             const r = reflections[p.id]
             return <tr key={p.id}>
-              <td><strong>{s.full_name}</strong><small>{s.mshs}</small></td>
+              <td><span className="cell-with-avatar"><Avatar name={s.full_name} path={s.avatar_path} size={30} />
+                <span><strong>{s.full_name ?? '—'}</strong><small>{s.mshs ?? ''}</small></span></span></td>
               <td>{formatDate(p.study_date)}<small>Tiết {p.period}</small></td>
-              <td><strong>{p.subject}</strong><small title={p.task}>{p.task}</small></td>
+              <td><strong>{p.subject === 'Khác' && p.subject_other ? p.subject_other : p.subject}</strong><small title={p.task}>{p.task}</small></td>
               <td><StatusBadge value={registrationStatus(p.study_date, p.created_at)} /></td>
+              <td>{p.use_device ? <span title={p.device_purpose}>💻 <StatusBadge value={p.device_status} /></span> : '—'}</td>
               {assistant.can_view_reflections && <td>{r
                 ? <>{<StatusBadge value={r.completion_status} />}{r.rating != null && <RatingStars value={r.rating} readOnly size={14} />}</>
-                : <span className="muted-text">Chưa cập nhật</span>}</td>}
+                : p.study_date < todayISO()
+                  ? <span className="help-flag">Chưa cập nhật</span>
+                  : <span className="muted-text">Chưa tới buổi</span>}</td>}
               {assistant.can_chat && <td><button className="icon-button" title="Nhắn tin" onClick={() => openChat(p.student_id)}><MessageSquare size={16} /></button></td>}
             </tr>
           })}</tbody>
-        </table>{rows.length === 0 && <div className="empty-state">Không có kế hoạch nào trong khoảng này.</div>}</div>}
+        </table>{rows.length === 0 && <div className="empty-state">Không có kế hoạch nào trong khoảng này.</div>}</div>
+        {rows.length > PAGE_SIZE && <div className="pager">
+          <button className="button ghost" disabled={page === 1} onClick={() => setPage((n) => n - 1)}>← Trước</button>
+          <span>Trang <strong>{page}</strong> / {totalPages} · {rows.length} nhiệm vụ</span>
+          <button className="button ghost" disabled={page === totalPages} onClick={() => setPage((n) => n + 1)}>Sau →</button>
+        </div>}</>}
       </div>
-    </section>}
+    </section>
+    : <section className="card empty-state">
+        <p>Giáo viên chưa bật quyền <strong>Xem kế hoạch lớp</strong> cho em, nên phần này đang trống.</p>
+      </section>}
 
     {chatWith && <div className="modal-backdrop" onMouseDown={() => setChatWith(null)}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -167,4 +259,8 @@ export default function TaPage() {
       </div>
     </div>}
   </div>
+}
+
+function Stat({ label, value, alert }) {
+  return <div className={`stat-card ${alert ? 'alert' : ''}`}><span>{label}</span><strong>{value}</strong></div>
 }

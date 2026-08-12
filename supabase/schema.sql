@@ -51,6 +51,9 @@ create table if not exists public.profiles (
   constraint student_requires_mshs check ((role = 'student' and mshs is not null) or role = 'teacher')
 );
 
+-- Ảnh đại diện: chỉ lưu đường dẫn trong Storage, không lưu URL (URL có hạn).
+alter table public.profiles add column if not exists avatar_path text;
+
 create table if not exists public.class_teachers (
   class_id uuid not null references public.classes(id) on delete cascade,
   teacher_id uuid not null references public.profiles(id) on delete cascade,
@@ -173,6 +176,40 @@ create index if not exists plans_review_idx on public.plans (class_id, review_st
 -- Phần chuyển dữ liệu cũ nằm ở CUỐI FILE, sau khi mọi trigger đã được thay thế.
 -- Nếu để ở đây, trigger bản cũ vẫn đang hiệu lực sẽ hoàn nguyên lệnh update.
 
+-- ---------- BUỔI TỰ HỌC (session) vs NHIỆM VỤ (task) ----------
+-- Một buổi tự học = (học sinh, ngày, tiết). Trong một buổi em có thể đăng ký
+-- NHIỀU nhiệm vụ. Trước v7 mỗi dòng plans là một buổi kèm đúng một nhiệm vụ,
+-- và ràng buộc unique(student, date, period) chặn cứng việc thêm nhiệm vụ thứ hai.
+--
+-- Cách làm: giữ nguyên bảng plans làm bảng NHIỆM VỤ (mọi thứ đang trỏ vào
+-- plans.id — reflections, evidence, notifications — nên đổi tên bảng sẽ rất tốn
+-- kém và rủi ro), chỉ thêm session_id. Ngày/tiết/lớp vẫn nằm trên plans nhưng
+-- do trigger sao chép từ session nên KHÔNG thể lệch nhau.
+create table if not exists public.self_study_sessions (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references public.profiles(id) on delete cascade,
+  class_id   uuid not null references public.classes(id) on delete cascade,
+  study_date date not null,
+  period     smallint not null check (period between 1 and 9),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (student_id, study_date, period)
+);
+
+create index if not exists sessions_class_date_idx on public.self_study_sessions (class_id, study_date desc);
+create index if not exists sessions_student_idx    on public.self_study_sessions (student_id, study_date desc);
+
+alter table public.plans add column if not exists session_id uuid references public.self_study_sessions(id) on delete cascade;
+-- Môn "Khác" cần ghi rõ là môn gì, nếu không thống kê môn sẽ mất dữ liệu.
+alter table public.plans add column if not exists subject_other text;
+
+do $$ begin
+  alter table public.plans add constraint plans_subject_other_check
+    check (subject_other is null or char_length(subject_other) <= 100);
+exception when duplicate_object then null; end $$;
+
+create index if not exists plans_session_idx on public.plans (session_id);
+
 -- ---------- Lịch tự học cố định của lớp ----------
 -- Lớp được phân giờ tự học cố định theo tuần (ví dụ: thứ Hai tiết 5, thứ Tư tiết 1).
 -- Khai báo ở đây để: (1) học sinh chỉ chọn được đúng khung giờ của lớp,
@@ -221,6 +258,24 @@ create table if not exists public.evidence (
     or (kind = 'link' and external_url is not null and storage_path is null)
   )
 );
+
+-- Minh chứng dạng CHỮ: không phải sản phẩm nào cũng có file hay link (giải xong
+-- bài trên vở, học thuộc một đoạn…). Cho em mô tả bằng lời để vẫn có gì đó nộp.
+alter table public.evidence add column if not exists body_text text;
+
+do $$ begin
+  alter table public.evidence drop constraint if exists evidence_kind_check;
+  alter table public.evidence add constraint evidence_kind_check
+    check (kind in ('image','file','link','text'));
+
+  alter table public.evidence drop constraint if exists evidence_location;
+  alter table public.evidence add constraint evidence_location check (
+    (kind in ('image','file') and storage_path is not null and external_url is null)
+    or (kind = 'link' and external_url is not null and storage_path is null)
+    or (kind = 'text'  and storage_path is null and external_url is null
+        and char_length(trim(coalesce(body_text, ''))) between 1 and 2000)
+  );
+end $$;
 
 -- ---------- Chat ----------
 -- Mỗi học sinh có ĐÚNG MỘT luồng trong lớp. Giáo viên và trợ giảng (nếu được bật
@@ -423,6 +478,27 @@ returns boolean language sql stable security definer set search_path = public as
   );
 $$;
 
+-- Người đang đăng nhập có được nhìn thấy TÊN của học sinh này không?
+-- Rộng hơn staff_sees_student(…, 'view_plans') một chút, và có lý do: trợ giảng
+-- chỉ được bật quyền xem yêu cầu hỗ trợ hoặc nhắn tin vẫn phải đọc được tên bạn,
+-- nếu không dashboard trợ giảng chỉ hiện một dãy dấu gạch.
+create or replace function public.staff_sees_student_name(p_student uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1
+    from public.students s
+    join public.enrollments e  on e.mshs = s.mshs and e.is_active
+    join public.classes c      on c.id = e.class_id
+    join public.school_years y on y.id = c.school_year_id and y.is_active
+    where s.claimed_user_id = p_student
+      and (
+        public.staff_perm(c.id, 'view_plans')
+        or public.staff_perm(c.id, 'view_help')
+        or public.staff_perm(c.id, 'chat')
+      )
+  );
+$$;
+
 -- p_user có phải giáo viên / trợ giảng của LỚP MÌNH không?
 -- Cần cho chat: nếu không, học sinh không đọc được tên người đang nhắn với mình.
 create or replace function public.shares_class_staff(p_user uuid)
@@ -461,23 +537,43 @@ $$;
 revoke all on function public.is_teacher(), public.teaches_class(uuid), public.teaches_user(uuid),
                       public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid),
                       public.staff_perm(uuid, text), public.staff_sees_student(uuid, text),
-                      public.shares_class_staff(uuid), public.is_assistant() from public;
+                      public.shares_class_staff(uuid), public.is_assistant(),
+                      public.staff_sees_student_name(uuid) from public;
 grant execute on function public.is_teacher(), public.teaches_class(uuid), public.teaches_user(uuid),
                           public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid),
                           public.staff_perm(uuid, text), public.staff_sees_student(uuid, text),
-                          public.shares_class_staff(uuid), public.is_assistant() to authenticated;
+                          public.shares_class_staff(uuid), public.is_assistant(),
+                          public.staff_sees_student_name(uuid) to authenticated;
 
 -- Khi TẠO kế hoạch: lớp do server gán, và trạng thái duyệt thiết bị luôn bắt đầu
 -- ở 'Chờ duyệt' — học sinh không thể tự khai là đã được duyệt.
 create or replace function public.plans_set_class()
 returns trigger language plpgsql security definer set search_path = public as $$
-declare c uuid;
+declare c uuid; s record;
 begin
-  c := public.student_active_class(new.student_id);
-  if c is null then
-    raise exception 'Học sinh chưa được ghi danh vào lớp nào của năm học hiện hành';
+  if new.session_id is not null then
+    -- Buổi tự học là nguồn sự thật: ngày/tiết/lớp/học sinh chép từ đó xuống,
+    -- nên nhiều nhiệm vụ trong cùng buổi không thể lệch ngày hay lệch tiết.
+    select * into s from public.self_study_sessions where id = new.session_id;
+    if s is null then
+      raise exception 'Buổi tự học không tồn tại';
+    end if;
+    new.student_id := s.student_id;
+    new.class_id   := s.class_id;
+    new.study_date := s.study_date;
+    new.period     := s.period;
+  else
+    -- Không gửi session_id (giao diện bản cũ): tự tìm hoặc tạo buổi tương ứng.
+    c := public.student_active_class(new.student_id);
+    if c is null then
+      raise exception 'Học sinh chưa được ghi danh vào lớp nào của năm học hiện hành';
+    end if;
+    insert into public.self_study_sessions (student_id, class_id, study_date, period)
+    values (new.student_id, c, new.study_date, new.period)
+    on conflict (student_id, study_date, period) do update set updated_at = now()
+    returning id into new.session_id;
+    new.class_id := c;
   end if;
-  new.class_id := c;
 
   -- auth.uid() null nghĩa là service role (script quản trị / seed) — giữ nguyên giá trị.
   if auth.uid() is not null then
@@ -599,6 +695,31 @@ begin
         new.device_reviewed_at := old.device_reviewed_at;
         new.device_review_note := old.device_review_note;
       end if;
+    end if;
+
+    -- Duyệt thiết bị và duyệt kế hoạch là MỘT quyết định. Đồng bộ hai chiều ngay
+    -- trong trigger để thầy cô bấm một lần là xong, và để mọi đường vào (bảng,
+    -- popup chi tiết, duyệt hàng loạt) đều cho ra cùng một kết quả.
+    if new.device_status is distinct from old.device_status
+       and new.device_status in ('Đã duyệt', 'Từ chối')
+       and public.staff_perm(old.class_id, 'review_device') then
+      new.review_status  := case when new.device_status = 'Đã duyệt' then 'Đã duyệt' else 'Cần điều chỉnh' end;
+      new.review_by      := auth.uid();
+      new.review_at      := now();
+      new.review_version := old.review_version + 1;
+      if new.device_status = 'Từ chối' then
+        new.review_note := coalesce(nullif(trim(coalesce(new.device_review_note, '')), ''), new.review_note);
+      end if;
+    end if;
+
+    -- Chiều ngược lại: duyệt kế hoạch có dùng thiết bị thì thiết bị cũng được duyệt.
+    if new.review_status = 'Đã duyệt'
+       and old.review_status is distinct from 'Đã duyệt'
+       and old.use_device and old.device_status = 'Chờ duyệt'
+       and public.staff_perm(old.class_id, 'review_device') then
+      new.device_status      := 'Đã duyệt';
+      new.device_reviewed_by := auth.uid();
+      new.device_reviewed_at := now();
     end if;
   end if;
   return new;
@@ -733,7 +854,8 @@ grant execute on function public.result_clock_start(date, timestamptz),
                           public.progress_status(date, timestamptz, boolean, boolean) to authenticated;
 
 -- View gộp sẵn để giao diện và analytics dùng chung MỘT định nghĩa trạng thái.
-drop view if exists public.plan_status;
+-- cascade vì session_status dựng trên plan_status; nó được tạo lại ngay bên dưới.
+drop view if exists public.plan_status cascade;
 create view public.plan_status with (security_invoker = true) as
 select
   p.id as plan_id,
@@ -763,6 +885,62 @@ from public.plans p
 left join public.reflections r on r.plan_id = p.id;
 
 grant select on public.plan_status to authenticated;
+
+-- Trạng thái của cả BUỔI suy ra từ các nhiệm vụ trong buổi — không nhập tay,
+-- nên không bao giờ mâu thuẫn với trạng thái từng nhiệm vụ.
+drop view if exists public.session_status;
+create view public.session_status with (security_invoker = true) as
+select
+  s.id as session_id,
+  s.student_id,
+  s.class_id,
+  s.study_date,
+  s.period,
+  s.created_at,
+  count(ps.plan_id)                                             as so_nhiem_vu,
+  count(*) filter (where ps.has_result)                         as da_cap_nhat,
+  count(*) filter (where ps.progress = 'Trễ hạn cập nhật')      as tre_han,
+  count(*) filter (where ps.progress = 'Hệ thống tự đánh giá')  as tu_danh_gia,
+  count(*) filter (where p.review_status = 'Chờ duyệt')         as cho_duyet,
+  bool_or(p.use_device)                                         as co_thiet_bi,
+  round(avg(ps.rating)::numeric, 1)                             as diem_tb,
+  case
+    when count(*) filter (where ps.progress in ('Trễ hạn cập nhật','Hệ thống tự đánh giá')) > 0
+      then 'Cần chú ý'
+    when count(ps.plan_id) > 0 and count(*) filter (where ps.has_result) = count(ps.plan_id)
+      then 'Đã hoàn thành'
+    when count(*) filter (where ps.progress = 'Chưa tới buổi') = count(ps.plan_id)
+      then 'Sắp tới'
+    else 'Đang thực hiện'
+  end as trang_thai
+from public.self_study_sessions s
+left join public.plans p       on p.session_id = s.id
+left join public.plan_status ps on ps.plan_id  = p.id
+group by s.id, s.student_id, s.class_id, s.study_date, s.period, s.created_at;
+
+grant select on public.session_status to authenticated;
+
+-- Hồ sơ: người dùng CHỈ được đổi ảnh đại diện của chính mình. Họ tên, MSHS, vai
+-- trò và cờ must_change_password phải khớp danh sách chính thức nên khóa lại.
+create or replace function public.profiles_guard_columns()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return new; end if;
+  if auth.uid() = old.id then
+    new.id                   := old.id;
+    new.role                 := old.role;
+    new.mshs                 := old.mshs;
+    new.full_name            := old.full_name;
+    new.must_change_password := old.must_change_password;
+    new.created_at           := old.created_at;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_profiles_guard_columns on public.profiles;
+create trigger trg_profiles_guard_columns before update on public.profiles
+for each row execute function public.profiles_guard_columns();
 
 -- ---------- Thông báo tự sinh ----------
 -- Sinh ở CSDL chứ không ở frontend: không thể bỏ qua, và không thể giả mạo.
@@ -1101,6 +1279,7 @@ alter table public.classes            enable row level security;
 alter table public.class_teachers     enable row level security;
 alter table public.class_assistants   enable row level security;
 alter table public.class_schedule     enable row level security;
+alter table public.self_study_sessions enable row level security;
 alter table public.students           enable row level security;
 alter table public.enrollments        enable row level security;
 alter table public.profiles           enable row level security;
@@ -1120,7 +1299,7 @@ begin
              and tablename in ('school_years','classes','class_teachers','class_assistants',
                                'students','enrollments','profiles','plans','reflections','evidence',
                                'conversations','messages','conversation_reads','notifications',
-                               'class_schedule')
+                               'class_schedule','self_study_sessions')
   loop
     execute format('drop policy if exists %I on %I.%I', p.policyname, p.schemaname, p.tablename);
   end loop;
@@ -1179,9 +1358,34 @@ create policy profiles_read on public.profiles
 for select to authenticated
 using (
   id = auth.uid()
-  or public.staff_sees_student(id, 'view_plans')
+  or public.staff_sees_student_name(id)
   or public.shares_class_staff(id)
 );
+
+-- Đổi ảnh đại diện của chính mình; trigger phía trên khóa mọi cột khác.
+create policy profiles_update_own on public.profiles
+for update to authenticated
+using (id = auth.uid()) with check (id = auth.uid());
+
+-- BUỔI TỰ HỌC
+create policy sessions_student_select on public.self_study_sessions
+for select to authenticated using (student_id = auth.uid());
+
+create policy sessions_student_insert on public.self_study_sessions
+for insert to authenticated
+with check (
+  student_id = auth.uid()
+  and study_date >= public.vn_today()
+  and class_id = public.student_active_class(auth.uid())
+);
+
+-- Xóa buổi khi buổi đó không còn nhiệm vụ nào (dọn rác), chỉ với buổi tương lai.
+create policy sessions_student_delete on public.self_study_sessions
+for delete to authenticated
+using (student_id = auth.uid() and study_date > public.vn_today());
+
+create policy sessions_staff_select on public.self_study_sessions
+for select to authenticated using (public.staff_perm(class_id, 'view_plans'));
 
 -- KẾ HOẠCH
 create policy plans_student_select on public.plans
@@ -1345,6 +1549,36 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+-- Bucket ảnh đại diện. ĐỂ RIÊNG TƯ: đây là ảnh của trẻ vị thành niên, không nên
+-- ai có link cũng xem được. Hiển thị bằng signed URL ngắn hạn.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars','avatars',false,2097152,array['image/jpeg','image/png','image/webp'])
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists avatar_write_own on storage.objects;
+drop policy if exists avatar_read on storage.objects;
+
+-- Chỉ ghi được vào đúng thư mục mang id của chính mình.
+create policy avatar_write_own on storage.objects
+for all to authenticated
+using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text)
+with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Đọc: của mình, của học sinh mình phụ trách, hoặc của giáo viên/trợ giảng lớp mình.
+create policy avatar_read on storage.objects
+for select to authenticated
+using (
+  bucket_id = 'avatars'
+  and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or public.staff_sees_student_name(((storage.foldername(name))[1])::uuid)
+    or public.shares_class_staff(((storage.foldername(name))[1])::uuid)
+  )
+);
+
 drop policy if exists storage_student_insert_own_folder on storage.objects;
 drop policy if exists storage_student_select_own_or_teacher on storage.objects;
 drop policy if exists storage_student_delete_own on storage.objects;
@@ -1402,16 +1636,18 @@ create index if not exists enrollments_class_idx   on public.enrollments (class_
 revoke all on public.school_years, public.classes, public.class_teachers, public.class_assistants,
               public.students, public.enrollments, public.profiles, public.plans, public.reflections,
               public.evidence, public.conversations, public.messages, public.conversation_reads,
-              public.notifications, public.class_schedule
+              public.notifications, public.class_schedule, public.self_study_sessions
        from anon, authenticated;
 
 grant select on public.school_years, public.classes, public.class_teachers, public.class_assistants,
                 public.students, public.enrollments, public.profiles, public.plans, public.reflections,
                 public.evidence, public.conversations, public.messages, public.conversation_reads,
-                public.notifications, public.class_schedule
+                public.notifications, public.class_schedule, public.self_study_sessions
       to authenticated;
 
 grant insert, update, delete on public.class_schedule to authenticated;   -- RLS: chỉ giáo viên lớp
+grant insert, delete on public.self_study_sessions to authenticated;      -- RLS: chỉ buổi của mình
+grant update (avatar_path) on public.profiles to authenticated;           -- chỉ đúng cột ảnh đại diện
 
 -- profiles / students / enrollments / classes chỉ được ghi bởi Edge Function và script
 -- quản trị (chạy bằng service role, bỏ qua cả hai lớp).
@@ -1436,6 +1672,34 @@ grant select on public.app_settings to authenticated;
 alter table public.auto_feedback_templates enable row level security;
 revoke all on public.auto_feedback_templates from anon, authenticated;
 
+-- ---------- Tách buổi tự học ra khỏi nhiệm vụ ----------
+-- Mỗi dòng plans cũ = một buổi kèm đúng một nhiệm vụ. Dữ liệu production đã kiểm
+-- tra: không có (học sinh, ngày, tiết) nào trùng, nên ánh xạ 1:1, không thể gộp sai.
+insert into public.self_study_sessions (student_id, class_id, study_date, period, created_at)
+select p.student_id, p.class_id, p.study_date, p.period, min(p.created_at)
+from public.plans p
+where p.session_id is null
+group by p.student_id, p.class_id, p.study_date, p.period
+on conflict (student_id, study_date, period) do nothing;
+
+update public.plans p
+   set session_id = s.id
+  from public.self_study_sessions s
+ where p.session_id is null
+   and s.student_id = p.student_id
+   and s.study_date = p.study_date
+   and s.period     = p.period;
+
+-- Gỡ ràng buộc chặn nhiều nhiệm vụ trong một buổi. Tính duy nhất chuyển lên
+-- self_study_sessions, nơi nó thực sự thuộc về.
+alter table public.plans drop constraint if exists plans_student_id_study_date_period_key;
+
+do $$ begin
+  alter table public.plans alter column session_id set not null;
+exception when others then
+  raise notice 'Còn nhiệm vụ chưa gắn buổi tự học — bỏ qua bước set not null';
+end $$;
+
 -- ---------- Chuyển dữ liệu cũ ----------
 -- ĐẶT Ở CUỐI FILE là có chủ ý: các trigger bảo vệ cột phải được thay thế xong
 -- trước, nếu không bản trigger cũ sẽ âm thầm hoàn nguyên những lệnh update này.
@@ -1456,5 +1720,21 @@ update public.plans
    set review_status = 'Không cần duyệt'
  where not use_device
    and review_status = 'Chờ duyệt';
+
+-- Hai trạng thái phải khớp nhau. Dọn nốt các kế hoạch cũ còn lệch: đã duyệt
+-- thiết bị nhưng kế hoạch vẫn treo, hoặc đã duyệt kế hoạch nhưng thiết bị còn chờ.
+update public.plans
+   set review_status = 'Đã duyệt'
+ where use_device
+   and device_status = 'Đã duyệt'
+   and review_status = 'Chờ duyệt';
+
+update public.plans
+   set device_status      = 'Đã duyệt',
+       device_reviewed_by = coalesce(device_reviewed_by, review_by),
+       device_reviewed_at = coalesce(device_reviewed_at, review_at)
+ where use_device
+   and device_status = 'Chờ duyệt'
+   and review_status = 'Đã duyệt';
 
 -- Danh sách lớp được nạp riêng bằng supabase/seed-roster.private.sql

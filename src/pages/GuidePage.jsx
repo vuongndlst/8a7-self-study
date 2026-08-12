@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarCheck2, CheckCircle2, Clock, FileCheck2, KeyRound, Laptop, LockKeyhole, MessageSquare, Star, UploadCloud, UserPlus } from 'lucide-react'
+import { AlertTriangle, CalendarCheck2, CheckCircle2, Clock, FileCheck2, ImagePlus, KeyRound, Laptop, ListPlus, LockKeyhole, MessageSquare, Star, UploadCloud, UserPlus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 export default function GuidePage() {
@@ -60,36 +60,63 @@ export default function GuidePage() {
       </div></article>
 
       <article className="guide-step"><span className="step-number">3</span><div>
-        <h3><CalendarCheck2 size={20}/> Đăng ký trước giờ tự học</h3>
-        <p>Chọn <strong>ngày + tiết 1–9</strong>, nội dung, nhiệm vụ và mục tiêu. Nên lập kế hoạch trước tối thiểu <strong>1 ngày</strong> — đăng ký trong ngày sẽ bị đánh dấu <em>Trễ</em>.</p>
-        <div className="guide-tip"><Laptop size={16}/> Nếu dùng thiết bị điện tử, ghi rõ mục đích. Đăng ký thiết bị <strong>phải chờ giáo viên duyệt</strong>.</div>
+        <h3><CalendarCheck2 size={20}/> Đăng ký một <em>buổi</em>, trong buổi có thể có nhiều nhiệm vụ</h3>
+        <p>Bấm <strong>Đăng ký giờ tự học</strong> rồi làm theo 3 bước: chọn <strong>ngày</strong> → chọn <strong>tiết</strong> → ghi <strong>nhiệm vụ</strong>.
+           Màn hình mặc định chỉ hiện <strong>một nhiệm vụ</strong>. Nếu buổi đó em định làm nhiều việc, bấm
+           <strong> “+ Thêm nhiệm vụ”</strong> để thêm khối thứ hai, thứ ba… Mỗi nhiệm vụ có môn, nội dung và mục tiêu riêng,
+           và sau này được chấm sao riêng.</p>
+        <div className="guide-tip"><ListPlus size={16}/> Ở bước chọn tiết, hệ thống chỉ mở <strong>những tiết lớp mình thực sự
+          được phân giờ tự học</strong> theo thời khóa biểu. Thứ nào lớp không có giờ tự học thì không chọn được — như vậy là đúng, không phải lỗi.</div>
+        <div className="guide-tip">Nên lập kế hoạch trước tối thiểu <strong>1 ngày</strong> — đăng ký trong ngày sẽ bị đánh dấu <em>Trễ</em>.
+          Nếu buổi đó em đã đăng ký rồi, nhiệm vụ mới sẽ được <strong>thêm vào buổi đang có</strong> chứ không tạo buổi trùng.</div>
       </div></article>
 
       <article className="guide-step"><span className="step-number">4</span><div>
-        <h3><CheckCircle2 size={20}/> Chờ kế hoạch được duyệt</h3>
-        <p>Sau khi đăng ký, kế hoạch ở trạng thái <strong>Chờ duyệt</strong>. Thầy cô xem rồi chuyển sang <strong>Đã duyệt</strong>, hoặc <strong>Cần điều chỉnh</strong> kèm lời nhắn nếu nhiệm vụ còn chung chung.</p>
-        <div className="guide-tip">Khi em sửa lại kế hoạch bị yêu cầu điều chỉnh, nó tự quay về hàng chờ duyệt — em không cần đăng ký lại từ đầu.</div>
+        <h3><CheckCircle2 size={20}/> Duyệt: chỉ nhiệm vụ có dùng thiết bị mới cần chờ</h3>
+        <p>Nhiệm vụ <strong>không dùng thiết bị điện tử</strong> ghi <em>Không cần duyệt</em> và có hiệu lực ngay — em cứ thế mà học.</p>
+        <p>Nhiệm vụ <strong>có dùng thiết bị</strong> thì ở trạng thái <strong>Chờ duyệt</strong> cho tới khi thầy cô xem. Khi thầy cô
+           duyệt thiết bị thì nhiệm vụ cũng chuyển sang <strong>Đã duyệt</strong> ngay trong cùng một lần — em không phải chờ hai lượt.</p>
+        <div className="guide-tip"><Laptop size={16}/> Nhớ ghi <strong>rõ mục đích</strong> dùng thiết bị. “Tra tài liệu” chung chung
+          thường bị trả về; “Mở đề bài tập Toán trên Canvas” thì được duyệt nhanh.</div>
+        <div className="guide-tip">Nếu bị <strong>Cần điều chỉnh</strong>, em sửa lại ngay trong thẻ kế hoạch — nó tự quay về hàng chờ duyệt,
+          không cần đăng ký lại từ đầu.</div>
       </div></article>
 
       <article className="guide-step"><span className="step-number">5</span><div>
-        <h3><UploadCloud size={20}/> Cập nhật sau giờ tự học</h3>
-        <p>Chọn Hoàn thành / Một phần / Chưa hoàn thành, ghi điều cần hỗ trợ nếu có, và nộp minh chứng nếu muốn.</p>
-        <div className="guide-tip"><FileCheck2 size={16}/> Minh chứng: JPG, PNG, PDF (≤ 5 MB) hoặc link Canva/Google Docs; tối đa 3 mục cho một kế hoạch.</div>
+        <h3><UploadCloud size={20}/> Cập nhật kết quả — nút to màu xanh</h3>
+        <p>Sau giờ tự học, mở thẻ của buổi đó. Mỗi nhiệm vụ chưa có kết quả sẽ có một nút lớn
+           <strong> “Cập nhật kết quả”</strong> ngay bên dưới. Bấm vào đó, chọn Hoàn thành / Một phần / Chưa hoàn thành,
+           ghi vài dòng, và bật <em>“Em cần giáo viên hỗ trợ”</em> nếu còn vướng.</p>
+        <div className="guide-tip"><FileCheck2 size={16}/><span>
+          <strong>Minh chứng nộp kiểu nào cũng được</strong> (tối đa 3 mục mỗi nhiệm vụ):
+          <ul className="tip-list">
+            <li><strong>Mô tả bằng chữ</strong> — làm bài trong vở thì chỉ cần tả lại em đã làm gì.</li>
+            <li><strong>Ảnh hoặc file</strong> — JPG, PNG, PDF, tối đa 5 MB.</li>
+            <li><strong>Liên kết</strong> — Canva, Google Docs, Padlet…</li>
+          </ul>
+          Không có sản phẩm số cũng không sao — phần mô tả bằng chữ là đủ.
+        </span></div>
       </div></article>
 
       <article className="guide-step"><span className="step-number">6</span><div>
         <h3><Star size={20}/> Xem đánh giá và nhận xét</h3>
-        <p>Thầy cô chấm <strong>1–5 sao</strong> và viết nhận xét cho tiết tự học của em.</p>
-        <div className="guide-tip"><AlertTriangle size={16}/> Tiết bị <strong>1 hoặc 2 sao</strong> sẽ có viền đỏ/vàng, và em cần viết một dòng cho biết sẽ điều chỉnh thế nào ở lần sau. Đây không phải hình phạt — chỉ là cách để em dừng lại một chút và nghĩ về cách làm khác.</div>
+        <p>Thầy cô chấm <strong>1–5 sao</strong> và viết nhận xét cho từng nhiệm vụ.</p>
+        <div className="guide-tip"><AlertTriangle size={16}/> Nhiệm vụ bị <strong>1 hoặc 2 sao</strong> sẽ có viền đỏ/vàng, và em cần viết một dòng cho biết sẽ điều chỉnh thế nào ở lần sau. Đây không phải hình phạt — chỉ là cách để em dừng lại một chút và nghĩ về cách làm khác.</div>
+      </div></article>
+
+      <article className="guide-step"><span className="step-number">7</span><div>
+        <h3><ImagePlus size={20}/> Ảnh đại diện (tùy chọn)</h3>
+        <p>Bấm vào vòng tròn tên viết tắt ở góc trên trang <strong>Kế hoạch của em</strong> để đổi ảnh. Ảnh được cắt vuông và thu nhỏ tự động.</p>
+        <div className="guide-tip"><LockKeyhole size={16}/> Ảnh này <strong>không công khai</strong>. Chỉ giáo viên và trợ giảng lớp em nhìn thấy. Em có thể bỏ ảnh bất cứ lúc nào.</div>
       </div></article>
     </div>
 
     <section className="guide-rules card">
       <h2>Trước · Trong · Sau giờ tự học</h2>
       <div className="three-rule-grid">
-        <div><span>TRƯỚC</span><strong>Lên kế hoạch</strong><p>Chọn nhiệm vụ theo thời hạn, đăng ký thiết bị nếu cần, gửi sớm để được duyệt.</p></div>
+        <div><span>TRƯỚC</span><strong>Lên kế hoạch</strong><p>Chọn ngày và tiết, ghi một hoặc nhiều nhiệm vụ, đăng ký thiết bị nếu cần và gửi sớm để được duyệt.</p></div>
         <div><span>TRONG</span><strong>Học theo kế hoạch</strong><p>Ổn định đúng giờ và tập trung vào mục tiêu đã đặt.</p></div>
-        <div><span>SAU</span><strong>Nhìn lại</strong><p>Cập nhật kết quả trong vòng 2 ngày và ghi điều em cần hỗ trợ.</p></div>
+        <div><span>SAU</span><strong>Nhìn lại</strong><p>Bấm nút <em>Cập nhật kết quả</em> trong vòng 2 ngày, nộp minh chứng (chữ, ảnh, file hoặc link) và ghi điều em cần hỗ trợ.</p></div>
       </div>
     </section>
 
@@ -98,7 +125,7 @@ export default function GuidePage() {
       <p className="muted-text">Em nên biết rõ điều này trước khi viết phần phản tư.</p>
       <ul className="privacy-list">
         <li><strong>Giáo viên chủ nhiệm lớp em</strong> đọc được toàn bộ kế hoạch, phản tư, minh chứng và tin nhắn của em.</li>
-        <li><strong>Bạn cùng lớp</strong> không đọc được gì của em — kể cả kế hoạch.</li>
+        <li><strong>Bạn cùng lớp</strong> không đọc được gì của em — kể cả kế hoạch và ảnh đại diện.</li>
         <li><strong>Trợ giảng</strong> là bạn được thầy cô cử ra để hỗ trợ. Mặc định các bạn ấy chỉ thấy kế hoạch và danh sách ai đang cần giúp — <strong>không</strong> đọc được phần phản tư riêng hay minh chứng của em, trừ khi thầy cô mở thêm quyền.</li>
         <li>Tin nhắn em gửi nằm trong <strong>một luồng chung với thầy cô</strong>, không phải tin nhắn riêng tư tuyệt đối.</li>
       </ul>
