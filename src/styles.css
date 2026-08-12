@@ -278,3 +278,75 @@ td .cell-with-avatar>span:last-child{min-width:0}
 .guide-tip>span{display:block;overflow:hidden}
 .tip-list{margin:6px 0;padding-left:18px;display:grid;gap:3px}
 .tip-list li{list-style:disc}
+
+/* ---------- Phan tich so lieu ---------- */
+.analytics{display:grid;gap:16px}
+.analytics.embedded{margin-top:12px}
+
+.range-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;background:#f3f7f4;border:1px solid var(--line);border-radius:14px;font-size:13px}
+.range-bar input[type=date]{padding:7px 9px;font-size:13px;width:auto;margin:0}
+.range-bar>span{color:var(--muted)}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px}
+.kpi-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:grid;gap:2px}
+.kpi-card>span{font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+.kpi-card>strong{font-size:27px;line-height:1.15;font-weight:800}
+.kpi-card>small{font-size:12px;color:var(--muted);line-height:1.45}
+.kpi-card.ok>strong{color:var(--green2)}
+.kpi-card.warn{border-color:#e8c584;background:var(--warn-bg)}
+.kpi-card.danger{border-color:#e6a3a3;background:var(--danger-bg)}
+.kpi-card.danger>strong{color:var(--danger)}
+
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.chart-card{padding:18px}
+.chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.chart-head h3{margin:0;font-size:15.5px}
+.chart-head p{margin:4px 0 0}
+.chart-empty{padding:22px;text-align:center;color:var(--muted);font-size:13px;background:#f8faf9;border-radius:12px}
+
+.hbars{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.hbars li{display:grid;grid-template-columns:minmax(72px,34%) 1fr auto;align-items:center;gap:10px;font-size:13px}
+.hbar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#425049}
+.hbar-track{display:flex;height:16px;background:#eef3f0;border-radius:8px;overflow:hidden}
+.hbar-fill{background:var(--green2);height:100%;border-radius:8px 0 0 8px}
+.hbar-fill.auto{background:#d9b26a}
+.hbar-value{font-weight:700;font-size:12.5px;color:#425049;white-space:nowrap}
+.rating-bars .hbar-label{letter-spacing:1px;color:#c9922a}
+
+.day-cols{display:flex;align-items:flex-end;gap:5px;height:150px;overflow-x:auto;padding-bottom:2px}
+.day-col{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;min-width:26px;flex:1;height:100%}
+.day-col-bar{width:100%;max-width:34px;background:#dbe7e0;border-radius:6px 6px 0 0;display:flex;flex-direction:column;justify-content:flex-end;min-height:4px}
+.day-col-done{width:100%;background:var(--green2);border-radius:6px 6px 0 0}
+.day-col small{font-size:10.5px;color:var(--muted);white-space:nowrap}
+
+.split-bar{display:flex;height:22px;border-radius:11px;overflow:hidden;background:#eef3f0}
+.split-bar>span.a{background:var(--green2)}
+.split-bar>span.b{background:#cdd9d2}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:12px;color:var(--muted)}
+.legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;background:var(--green2);margin-right:5px;vertical-align:-1px}
+.legend .sw.auto{background:#d9b26a}
+.legend .sw.b{background:#cdd9d2}
+
+.mini-stats{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--muted);margin-top:10px}
+.mini-stats.column{flex-direction:column;gap:9px;margin-top:0}
+.mini-stats strong{color:var(--ink);margin-left:5px}
+.mini-stats.column span{display:flex;justify-content:space-between;border-bottom:1px dashed var(--line);padding-bottom:7px}
+
+.table-toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:10px}
+.table-toolbar select{width:auto;margin:0;font-size:13px}
+.inline-check{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);margin:0}
+.inline-check input{width:auto;margin:0}
+tr.thin-sample{opacity:.62}
+
+@media(max-width:700px){
+  .chart-grid{grid-template-columns:1fr}
+  .hbars li{grid-template-columns:minmax(64px,40%) 1fr auto}
+  .range-bar{font-size:12px}
+}
+
+/* Bang hoc sinh 9 cot lam grid tinh theo max-content, keo ca trang tran ngang.
+   Ep moi track ve minmax(0,1fr) de noi dung rong tu cuon ben trong the. */
+.analytics{grid-template-columns:minmax(0,1fr)}
+.chart-grid>*{min-width:0}
+.chart-card{min-width:0;overflow:hidden}
+.chart-card .table-wrap{overflow-x:auto}

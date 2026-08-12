@@ -9,6 +9,7 @@ import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
 import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
 import SessionRegister from '../components/SessionRegister'
 import Avatar, { AvatarUploader } from '../components/Avatar'
+import { StudentAnalytics } from '../components/Analytics'
 
 const activityOptions=['Bài tập cá nhân','Ôn tập','Công việc nhóm','Đọc sách','Chuẩn bị nội dung chia sẻ','Khác']
 const subjectOptions=['Toán','Ngữ văn','Tiếng Anh','Khoa học tự nhiên','Lịch sử & Địa lý','GDCD','Tin học','Công nghệ','Nghệ thuật','Khác']
@@ -161,6 +162,10 @@ export default function StudentPage(){
       <div className="section-title"><div><h2>Lịch sử gần đây</h2><p>Sau giờ tự học, cập nhật kết quả và minh chứng nếu có.</p></div></div>
       {past.length===0?<EmptyState text="Chưa có lịch sử tự học."/>:<div className="plan-grid">{past.slice(0,15).map(s=><SessionCard key={s.key} session={s} reflections={reflections} evidence={evidence} status={status} onOpen={setOpenPlan} onChanged={load}/>)}</div>}
     </section>
+
+    {/* Số liệu đặt CUỐI trang: việc cần làm (đăng ký, cập nhật kết quả) phải
+        nhìn thấy trước, biểu đồ là phần nhìn lại sau khi đã làm xong. */}
+    {plans.length>0&&<StudentAnalytics studentId={profile.id}/>}
 
     {openPlan&&(openPlan.study_date>todayISO()
       ?<EditPlanModal plan={openPlan} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>

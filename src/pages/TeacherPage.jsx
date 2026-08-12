@@ -9,6 +9,7 @@ import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
 import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
 import { ClassScheduleSettings, MissingRegistrations } from '../components/ClassSchedule'
 import Avatar from '../components/Avatar'
+import { ClassAnalytics, StudentAnalytics } from '../components/Analytics'
 
 const PAGE_SIZE = 25
 
@@ -291,6 +292,7 @@ export default function TeacherPage(){
     <div className="segmented view-switch">
       <button type="button" className={view==='plans'?'active':''} onClick={()=>setView('plans')}>Theo kế hoạch</button>
       <button type="button" className={view==='students'?'active':''} onClick={()=>setView('students')}>Theo học sinh</button>
+      <button type="button" className={view==='analytics'?'active':''} onClick={()=>setView('analytics')}>Phân tích</button>
       <button type="button" className={view==='missing'?'active':''} onClick={()=>setView('missing')}>HS chưa đăng ký</button>
       <button type="button" className={view==='schedule'?'active':''} onClick={()=>setView('schedule')}>Lịch tự học</button>
       <button type="button" className={view==='assistants'?'active':''} onClick={()=>setView('assistants')}>Trợ giảng</button>
@@ -298,6 +300,7 @@ export default function TeacherPage(){
 
     {view==='schedule'&&<ClassScheduleSettings classId={context.classId} className={context.className}/>}
     {view==='missing'&&<MissingRegistrations classId={context.classId}/>}
+    {view==='analytics'&&<ClassAnalytics classId={context.classId} className={context.className}/>}
 
     {view==='assistants'&&<AssistantsPanel
       classId={context.classId} perStudent={perStudent} assistants={assistants} onChanged={load}/>}
@@ -733,6 +736,7 @@ function TaskDetailModal({plan,student,reflection,evidence,onOpenEvidence,onClos
 
 // Hồ sơ một học sinh: thống kê + toàn bộ lịch sử tiết tự học.
 function StudentDetailModal({row,plans,reflections,evidence,onClose,onOpenTask,onChat}){
+  const [tab,setTab]=useState('history')
   const mine=plans.filter(p=>p.student_id===row.id)
   const done=mine.filter(p=>reflections[p.id]?.completion_status==='Hoàn thành').length
   const rated=mine.map(p=>reflections[p.id]?.rating).filter(v=>v!=null)
@@ -762,6 +766,16 @@ function StudentDetailModal({row,plans,reflections,evidence,onClose,onOpenTask,o
       <p>{bySubject.slice(0,4).map(([s,n])=>`${s} (${n})`).join(' · ')}</p>
     </div>}
 
+    <div className="segmented view-switch">
+      <button type="button" className={tab==='history'?'active':''} onClick={()=>setTab('history')}>Lịch sử tiết tự học</button>
+      <button type="button" className={tab==='analytics'?'active':''} onClick={()=>setTab('analytics')}>Phân tích số liệu</button>
+    </div>
+
+    {tab==='analytics'
+      ? (row.hasAccount
+          ? <StudentAnalytics studentId={row.id} name={row.name} embedded/>
+          : <div className="empty-state">Em này chưa tạo tài khoản nên chưa có số liệu.</div>)
+      : <>
     <div className="section-title"><div><h3>Lịch sử tiết tự học</h3><p>Bấm vào một tiết để xem chi tiết và chấm sao.</p></div>
       <button className="button ghost" onClick={onChat}><MessageSquare size={16}/> Nhắn tin</button></div>
 
@@ -778,6 +792,7 @@ function StudentDetailModal({row,plans,reflections,evidence,onClose,onOpenTask,o
         </tr>
       })}</tbody>
     </table>{mine.length===0&&<div className="empty-state">Em này chưa đăng ký tiết tự học nào.</div>}</div>
+    </>}
   </div></div>
 }
 

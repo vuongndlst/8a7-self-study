@@ -294,6 +294,55 @@ Minh chứng có **bốn dạng** (`evidence.kind`), tối đa 3 mục mỗi nhi
 `kind='text'` là bổ sung mới; ràng buộc `evidence_location` chặn text rỗng, và chặn nhầm
 lẫn giữa ba dạng (text không được có `storage_path`/`external_url`, và ngược lại).
 
+## 8c. Phân tích số liệu
+
+Ba chỗ, một nguồn số:
+
+| Ở đâu | Ai xem | Hàm |
+|---|---|---|
+| Tab **Phân tích** trên dashboard giáo viên | GV, TA có `view_plans` | `class_analytics(class, from, to)` |
+| Cuối trang **Kế hoạch của em** | chính em đó | `student_analytics(student, from, to)` |
+| Tab **Phân tích số liệu** trong popup hồ sơ học sinh | GV / TA phụ trách em | `student_analytics(student, from, to)` |
+
+### Gộp ở CSDL, không gộp ở trình duyệt
+
+Cả ba đều gọi chung `analytics_build()`. Ba lý do đặt ở CSDL:
+
+1. **Một request** thay vì kéo cả nghìn dòng về rồi tính bằng JavaScript.
+2. **Một định nghĩa duy nhất** cho "hoàn thành", "trễ hạn", "đúng hạn" — dùng lại view
+   `plan_status`. Số của học sinh và số của giáo viên không thể lệch nhau.
+3. **Quyền kiểm ở server.** Học sinh gọi thẳng RPC với `student_id` của bạn khác sẽ bị
+   `42501`, không phải chỉ bị giao diện giấu đi.
+
+`analytics_build()` là `security definer` nhưng **không cấp quyền cho ai cả** — kể cả
+`authenticated`. Chỉ hai hàm bọc ngoài được cấp, và mỗi hàm tự kiểm quyền trước khi gọi:
+`class_analytics` kiểm `staff_perm(class, 'view_plans')`, `student_analytics` kiểm
+`p_student = auth.uid() or staff_sees_student(p_student, 'view_plans')`.
+
+### Ba quy ước dễ làm sai, đã cố định
+
+- **Nhiệm vụ chưa tới ngày không vào mẫu số.** Tỷ lệ cập nhật và tỷ lệ hoàn thành chỉ tính
+  trên `study_date < vn_today()`. Không thì mỗi lần cả lớp đăng ký trước một tuần là tỷ lệ
+  hoàn thành tụt xuống, dù chưa ai làm gì sai.
+- **Sao hệ thống tự ghi tách khỏi sao thầy cô chấm.** Gộp chung thì trung bình lớp bị kéo
+  xuống bởi những tiết chưa ai đọc — biểu đồ sẽ nói sai về chất lượng học. Giao diện hiện
+  điểm thầy cô chấm làm số chính, và chỉ ghi thêm một dòng nếu gộp cả sao tự động thì khác.
+- **Ngưỡng mẫu tối thiểu 5 nhiệm vụ.** Em dưới ngưỡng bị đánh dấu *"ít dữ liệu"* và làm mờ
+  trong bảng. Một em có đúng một nhiệm vụ 5 sao không phải là em học tốt nhất lớp.
+
+Múi giờ: mọi phép nhóm theo ngày dùng `study_date` (vốn đã là ngày theo giờ Việt Nam) và
+`vn_today()`; "đúng hạn" so `study_date` với `created_at at time zone 'Asia/Ho_Chi_Minh'`,
+đúng bằng công thức mà giao diện dùng.
+
+### Nội dung
+
+KPI · nhịp đăng ký theo ngày · thói quen lập kế hoạch (báo trước bao lâu) · môn/hoạt động ·
+theo tiết · phân bố sao · thiết bị điện tử (kèm so sánh điểm có/không thiết bị) · số nhiệm
+vụ mỗi buổi · việc còn tồn · bảng từng học sinh có sắp xếp và **xuất CSV**.
+
+Biểu đồ tự vẽ bằng CSS/SVG, không thêm thư viện — mấy hình này đều đơn giản và gói biểu đồ
+nào cũng nặng hơn toàn bộ phần còn lại của trang cộng lại.
+
 ## 9. Hạn cập nhật kết quả — tự động hóa
 
 Vòng lặp Plan → Do → **Update** → Reflect hay đứt ở bước 3: lúc audit có **7/9 kế hoạch

@@ -1257,6 +1257,174 @@ $$;
 revoke all on function public.bulk_review_plans(uuid[], text, text) from public, anon;
 grant execute on function public.bulk_review_plans(uuid[], text, text) to authenticated;
 
+-- ---------- Phân tích số liệu ----------
+-- Gộp Ở CSDL, không gộp ở trình duyệt. Ba lý do:
+--   1. Một request thay vì kéo cả nghìn dòng về rồi tính bằng JavaScript.
+--   2. Định nghĩa "hoàn thành", "trễ hạn", "đúng hạn" chỉ tồn tại MỘT chỗ, dùng
+--      lại view plan_status — số của học sinh và số của giáo viên không thể lệch.
+--   3. Quyền được kiểm ở server. Học sinh gọi thẳng RPC cũng không lấy được
+--      số liệu của bạn khác.
+--
+-- Hàm dựng bên dưới là security definer nên plan_status (security_invoker) chạy
+-- dưới quyền chủ hàm và bỏ qua RLS. An toàn vì hàm này KHÔNG được cấp quyền cho
+-- ai cả — chỉ hai hàm bọc ngoài, mỗi hàm tự kiểm quyền trước khi gọi, mới được.
+create or replace function public.analytics_build(
+  p_class uuid, p_student uuid, p_from date, p_to date, p_roster boolean
+) returns json language sql stable security definer set search_path = public as $$
+with base as (
+  select
+    p.id, p.student_id, p.study_date, p.period, p.created_at, p.session_id,
+    p.use_device, p.device_status, p.review_status, p.priority,
+    -- "Khác" mà có ghi rõ thì tính theo tên em ghi, không dồn hết vào một rổ.
+    case when p.subject = 'Khác' and coalesce(p.subject_other, '') <> ''
+         then p.subject_other else p.subject end as mon,
+    ps.progress, ps.lead_time_hours, ps.has_result, ps.auto_evaluated, ps.rating,
+    r.completion_status, r.need_help, r.help_resolved,
+    (p.study_date < public.vn_today())                                     as da_qua,
+    (p.study_date - (p.created_at at time zone 'Asia/Ho_Chi_Minh')::date >= 1) as dung_han
+  from public.plans p
+  join public.plan_status ps on ps.plan_id = p.id
+  left join public.reflections r on r.plan_id = p.id
+  where p.study_date between p_from and p_to
+    and (p_class   is null or p.class_id   = p_class)
+    and (p_student is null or p.student_id = p_student)
+),
+-- Nhiệm vụ CHƯA TỚI NGÀY không được tính vào tỷ lệ hoàn thành: em chưa có cơ hội làm.
+qua as (select * from base where da_qua),
+sess as (select session_id, count(*) as so_nv from base group by session_id)
+select json_build_object(
+  'pham_vi', json_build_object(
+    'tu', p_from, 'den', p_to, 'hom_nay', public.vn_today(),
+    'nguong_xep_hang', 5
+  ),
+  'kpi', (select json_build_object(
+      'so_buoi',          count(distinct session_id),
+      'so_nhiem_vu',      count(*),
+      'so_hoc_sinh',      count(distinct student_id),
+      'da_qua',           count(*) filter (where da_qua),
+      'sap_toi',          count(*) filter (where not da_qua),
+      -- "Tự cập nhật" loại bỏ các tiết do hệ thống chấm thay: có bản ghi kết quả
+      -- không có nghĩa là em đã tự nhìn lại.
+      'tu_cap_nhat',      count(*) filter (where da_qua and has_result and not auto_evaluated),
+      'hoan_thanh',       count(*) filter (where da_qua and completion_status = 'Hoàn thành'),
+      'mot_phan',         count(*) filter (where da_qua and completion_status = 'Một phần'),
+      'chua_hoan_thanh',  count(*) filter (where da_qua and completion_status = 'Chưa hoàn thành'),
+      'dung_han',         count(*) filter (where dung_han),
+      'tre_han',          count(*) filter (where progress = 'Trễ hạn cập nhật'),
+      'tu_dong',          count(*) filter (where auto_evaluated),
+      'can_ho_tro',       count(*) filter (where need_help and not coalesce(help_resolved, false)),
+      'cho_duyet',        count(*) filter (where review_status = 'Chờ duyệt'),
+      'can_dieu_chinh',   count(*) filter (where review_status = 'Cần điều chỉnh'),
+      'diem_tb',          round(avg(rating) filter (where rating is not null and not auto_evaluated)::numeric, 2),
+      'diem_tb_gom_tu_dong', round(avg(rating) filter (where rating is not null)::numeric, 2),
+      'so_luot_cham',     count(*) filter (where rating is not null and not auto_evaluated),
+      'lead_time_tb',     round(avg(lead_time_hours) filter (where lead_time_hours is not null)::numeric, 1),
+      'lead_time_giua',   round((percentile_cont(0.5) within group (order by lead_time_hours))::numeric, 1)
+    ) from base),
+  'theo_ngay', coalesce((select json_agg(x order by x.ngay) from (
+      select study_date as ngay,
+             count(*) as so_nhiem_vu,
+             count(distinct session_id) as so_buoi,
+             count(*) filter (where da_qua) as da_qua,
+             count(*) filter (where da_qua and has_result and not auto_evaluated) as tu_cap_nhat,
+             count(*) filter (where da_qua and completion_status = 'Hoàn thành') as hoan_thanh,
+             round(avg(rating) filter (where rating is not null and not auto_evaluated)::numeric, 2) as diem_tb
+      from base group by study_date) x), '[]'::json),
+  'theo_mon', coalesce((select json_agg(x order by x.so_nhiem_vu desc, x.mon) from (
+      select mon,
+             count(*) as so_nhiem_vu,
+             count(*) filter (where da_qua and completion_status = 'Hoàn thành') as hoan_thanh,
+             count(*) filter (where da_qua) as da_qua,
+             round(avg(rating) filter (where rating is not null and not auto_evaluated)::numeric, 2) as diem_tb
+      from base group by mon) x), '[]'::json),
+  'theo_tiet', coalesce((select json_agg(x order by x.tiet) from (
+      select period as tiet,
+             count(*) as so_nhiem_vu,
+             count(*) filter (where da_qua) as da_qua,
+             count(*) filter (where da_qua and has_result and not auto_evaluated) as tu_cap_nhat,
+             round(avg(rating) filter (where rating is not null and not auto_evaluated)::numeric, 2) as diem_tb
+      from base group by period) x), '[]'::json),
+  'thiet_bi', (select json_build_object(
+      'co',        count(*) filter (where use_device),
+      'khong',     count(*) filter (where not use_device),
+      'da_duyet',  count(*) filter (where use_device and device_status = 'Đã duyệt'),
+      'cho_duyet', count(*) filter (where use_device and device_status = 'Chờ duyệt'),
+      'tu_choi',   count(*) filter (where use_device and device_status = 'Từ chối'),
+      -- Dùng thiết bị có làm kết quả tốt hơn không — câu hỏi đáng hỏi mỗi kỳ.
+      'diem_tb_co',    round(avg(rating) filter (where use_device and rating is not null and not auto_evaluated)::numeric, 2),
+      'diem_tb_khong', round(avg(rating) filter (where not use_device and rating is not null and not auto_evaluated)::numeric, 2)
+    ) from base),
+  -- Tách sao THẦY CÔ chấm khỏi sao HỆ THỐNG tự ghi: gộp chung thì trung bình lớp
+  -- bị kéo xuống bởi những tiết chưa ai đọc, và biểu đồ nói sai về chất lượng học.
+  'phan_bo_sao', coalesce((select json_agg(x order by x.sao) from (
+      select g.sao,
+             count(b.id) filter (where not b.auto_evaluated) as thu_cong,
+             count(b.id) filter (where b.auto_evaluated)     as tu_dong
+      from generate_series(1, 5) as g(sao)
+      left join base b on b.rating = g.sao
+      group by g.sao) x), '[]'::json),
+  'nhiem_vu_moi_buoi', coalesce((select json_agg(x order by x.so_nhiem_vu) from (
+      select so_nv as so_nhiem_vu, count(*) as so_buoi from sess group by so_nv) x), '[]'::json),
+  'lead_time', coalesce((select json_agg(x order by x.thu_tu) from (
+      select 1 as thu_tu, 'Đăng ký trong ngày' as nhom, count(*) as so_luong from base where lead_time_hours < 24
+      union all select 2, '1–2 ngày trước',  count(*) from base where lead_time_hours >= 24  and lead_time_hours < 72
+      union all select 3, '3–7 ngày trước',  count(*) from base where lead_time_hours >= 72  and lead_time_hours < 192
+      union all select 4, 'Hơn 1 tuần',      count(*) from base where lead_time_hours >= 192) x), '[]'::json),
+  'hoc_sinh', case when not p_roster then '[]'::json else coalesce((
+      select json_agg(x order by x.ho_ten) from (
+        select b.student_id, pr.mshs, pr.full_name as ho_ten, pr.avatar_path,
+               count(*) as so_nhiem_vu,
+               count(distinct b.session_id) as so_buoi,
+               count(*) filter (where b.da_qua) as da_qua,
+               count(*) filter (where b.da_qua and b.has_result and not b.auto_evaluated) as tu_cap_nhat,
+               count(*) filter (where b.da_qua and b.completion_status = 'Hoàn thành') as hoan_thanh,
+               count(*) filter (where b.dung_han) as dung_han,
+               count(*) filter (where b.progress = 'Trễ hạn cập nhật') as tre_han,
+               count(*) filter (where b.auto_evaluated) as tu_dong,
+               count(*) filter (where b.rating is not null and b.rating <= 2 and not b.auto_evaluated) as sao_thap,
+               round(avg(b.rating) filter (where b.rating is not null and not b.auto_evaluated)::numeric, 2) as diem_tb,
+               round(avg(b.lead_time_hours)::numeric, 1) as lead_time_tb,
+               -- Ít dữ liệu thì KHÔNG xếp hạng. Một em có đúng 1 nhiệm vụ 5 sao
+               -- không phải là em học tốt nhất lớp.
+               (count(*) >= 5) as du_mau
+        from base b
+        join public.profiles pr on pr.id = b.student_id
+        group by b.student_id, pr.mshs, pr.full_name, pr.avatar_path) x), '[]'::json) end
+);
+$$;
+
+revoke all on function public.analytics_build(uuid, uuid, date, date, boolean) from public, anon, authenticated;
+
+-- Phân tích cả lớp — chỉ giáo viên / trợ giảng có quyền xem kế hoạch.
+create or replace function public.class_analytics(p_class uuid, p_from date, p_to date)
+returns json language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.staff_perm(p_class, 'view_plans') then
+    raise exception 'Không có quyền xem số liệu của lớp này' using errcode = '42501';
+  end if;
+  return public.analytics_build(p_class, null, p_from, p_to, true);
+end;
+$$;
+
+-- Phân tích một học sinh — chính em đó, hoặc giáo viên/TA phụ trách em.
+-- Học sinh gọi thẳng RPC với id của bạn khác sẽ bị từ chối ở đây, không phải
+-- chỉ ở giao diện.
+create or replace function public.student_analytics(p_student uuid, p_from date, p_to date)
+returns json language plpgsql stable security definer set search_path = public as $$
+begin
+  if p_student is distinct from auth.uid()
+     and not public.staff_sees_student(p_student, 'view_plans') then
+    raise exception 'Không có quyền xem số liệu của học sinh này' using errcode = '42501';
+  end if;
+  return public.analytics_build(null, p_student, p_from, p_to, false);
+end;
+$$;
+
+revoke all on function public.class_analytics(uuid, date, date)   from public, anon;
+revoke all on function public.student_analytics(uuid, date, date) from public, anon;
+grant execute on function public.class_analytics(uuid, date, date)   to authenticated;
+grant execute on function public.student_analytics(uuid, date, date) to authenticated;
+
 -- ---------- Lịch chạy tự động ----------
 -- pg_cron dùng giờ UTC. 12:00 UTC = 19:00 VN (sau giờ học), 01:00 UTC = 08:00 VN.
 -- Chạy 2 lần/ngày là đủ; hàm idempotent nên chạy thừa cũng vô hại.
