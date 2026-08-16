@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  BarChart3, CalendarRange, Check, ClipboardCopy, FileSpreadsheet, GraduationCap, KeyRound,
+  CalendarRange, Check, ClipboardCopy, FileSpreadsheet, GraduationCap, KeyRound,
   LayoutGrid, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, UserCheck, UserPlus, UserX, X,
 } from 'lucide-react'
 import { supabase, callFunction } from '../lib/supabase'

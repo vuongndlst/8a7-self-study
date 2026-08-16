@@ -14,16 +14,49 @@ Mỗi học sinh giữ **một tài khoản duy nhất suốt các năm**. Lên 
 danh, không tạo lại tài khoản, không mất lịch sử.
 
 ```text
-school_years   2026-2027, 2027-2028…   (đúng một năm is_active)
-classes        8A7 thuộc năm nào
+school_years   2026-2027, 2027-2028…   (đúng một năm is_active = năm hiện tại)
+class_catalog  danh mục 6A1–8A10        ← tên lớp, không gõ tay
+classes        8A7 CỦA năm nào          ← đã là cặp lớp × năm học
 students       MSHS + họ tên, theo em suốt các năm
-enrollments    em nào học lớp nào       ← "danh sách lớp"
-class_teachers giáo viên phụ trách lớp nào
+enrollments    em nào học lớp nào       ← "danh sách lớp", có school_year_id
+class_teachers ai phụ trách lớp nào     ← primary/co, active/inactive
 ```
 
 Giáo viên **chỉ thấy lớp mình phụ trách** — kế hoạch, hồ sơ, minh chứng, và chỉ đặt lại
 được mật khẩu cho học sinh lớp mình. Nhiều giáo viên dùng chung một hệ thống mà không
 thấy dữ liệu của nhau.
+
+### Ba ràng buộc chống sai dữ liệu, đặt ở database
+
+| Ràng buộc | Ngăn điều gì |
+|---|---|
+| `one_primary_teacher_per_class` | Hai giáo viên cùng nhận một lớp |
+| `one_active_class_per_year` | Một học sinh ở hai lớp trong cùng năm |
+| `students.mshs` là khóa chính | Lên lớp tạo ra học sinh trùng |
+
+**Lên lớp không tạo học sinh mới.** Cùng MSHS, năm mới, lớp khác → chỉ **thêm một dòng
+ghi danh**. Tài khoản, mật khẩu, ảnh đại diện và toàn bộ lịch sử năm cũ giữ nguyên.
+
+## 1b. Vai trò và quyền
+
+| Vai trò | Phạm vi |
+|---|---|
+| `admin` | Toàn trường. Ở trường này admin **cũng chủ nhiệm một lớp** nên vào được cả dashboard giáo viên |
+| `teacher` + `approved` | Chỉ lớp được phân công, trong năm hiện tại |
+| `teacher` + `pending`/`suspended`/`rejected` | Gần như bằng người chưa đăng nhập — chỉ đọc được hồ sơ của chính mình |
+| Trợ giảng | Vẫn là **học sinh**, thêm dòng trong `class_assistants`. Không phải một role riêng — biến TA thành role sẽ làm mất dữ liệu tự học của chính em ấy |
+| `student` | Chỉ dữ liệu của chính mình |
+
+**Trạng thái duyệt tách khỏi role.** Dùng role để biểu diễn trạng thái duyệt sẽ khiến mọi
+policy phải biết "teacher_pending" là gì.
+
+Bốn hàm `is_teacher` / `teaches_class` / `teaches_mshs` / `teaches_user` là **chỗ duy nhất**
+quyết định "ai là nhân sự của lớp này". Chúng đòi `approval_status='approved'` và
+`class_teachers.status='active'`, đồng thời mở đường cho admin. Siết một chỗ là siết cả hệ
+thống — không phải sửa hàng chục policy rồi bỏ sót một cái.
+
+Không có đường nào từ giao diện nâng role lên `admin`. Cột `role` không nằm trong bất kỳ
+`GRANT UPDATE` nào, nên học sinh gọi thẳng API sẽ bị chặn ở tầng quyền bảng, trước cả RLS.
 
 ## 2. Tài khoản học sinh
 
@@ -84,16 +117,74 @@ các file `VITE_*`.
 
 ## 4. Dựng cơ sở dữ liệu
 
-Supabase Dashboard → SQL Editor → chạy toàn bộ `supabase/schema.sql`.
+Supabase Dashboard → SQL Editor → chạy **ba file, đúng thứ tự này**:
 
-> File **chạy lại nhiều lần được và không xóa dữ liệu**: chỉ `create … if not exists`,
+```text
+1. supabase/schema.sql          lõi: kế hoạch, phản tư, minh chứng, chat, thông báo
+2. supabase/schema-2-school.sql lớp nền tảng toàn trường: vai trò, danh mục lớp, import
+3. supabase/schema-3-rls.sql    quyền, nghiệp vụ, số liệu, và chuyển dữ liệu cũ
+```
+
+Thứ tự có ý nghĩa: file 3 định nghĩa lại các hàm quyền của file 1 để thêm `admin` và
+điều kiện "đã được duyệt", và phần **chuyển dữ liệu cũ nằm ở cuối file 3** — sau khi mọi
+trigger đã được thay xong. Chạy sớm hơn thì trigger bản cũ sẽ âm thầm hoàn nguyên.
+
+> Cả ba **chạy lại nhiều lần được và không xóa dữ liệu**: chỉ `create … if not exists`,
 > `alter … add column if not exists`, `create or replace function`, và dựng lại policy.
-> Nâng cấp hệ thống đang chạy thật chỉ cần chạy lại file này.
+> Nâng cấp hệ thống đang chạy thật chỉ cần chạy lại đủ ba file.
+
+Bootstrap quản trị viên nằm ở cuối file 3: tài khoản `ict.vuongnd@lsts.edu.vn` được đặt
+`role='admin'`. Email chỉ dùng để **tìm đúng tài khoản một lần**; sau bước đó quyền nằm ở
+`profiles.role`, không ở email.
 
 Sau đó bật password policy: Authentication → Sign In / Providers → Password Requirements
 → tối thiểu **10** ký tự, yêu cầu **chữ thường + chữ hoa + chữ số**.
 
 ## 5. Tạo lớp và giáo viên
+
+### Cách chính: trang Quản trị (`#/admin`)
+
+Từ khi hệ thống chạy cho cả trường, mọi việc này làm trên giao diện — không cần chạy
+script nữa.
+
+**Thêm giáo viên** (tab *Giáo viên*):
+
+| Cách | Dùng khi |
+|---|---|
+| **Import từ Excel** | Đầu năm, nhận danh sách cả trường. 3 cột: `Họ và tên` · `Email` · `Lớp chủ nhiệm` |
+| **Thêm giáo viên** | Một người lẻ. Chọn lớp luôn trong cùng form |
+
+Tải file mẫu ngay trong hộp thoại (`public/templates/Mau_import_giao_vien.xlsx`).
+
+**Quy tắc quan trọng nhất: tài khoản giáo viên là duy nhất theo email.** Email đã có thì
+**dùng lại**, chỉ thêm phân công lớp — không tạo tài khoản thứ hai, không đổi mật khẩu
+thầy cô đang dùng, không mất lịch sử đã xử lý. Đây chính là ca *"giáo viên cũ, năm mới"*
+mà mỗi năm đều gặp.
+
+Giáo viên **mới** nhận mật khẩu tạm hiện **đúng một lần** (server chỉ lưu bản băm), và bị
+bắt tự đổi ở lần đăng nhập đầu.
+
+**Năm học** (tab *Năm học*): nút *Tạo năm học*. Hệ thống **không tự đoán ngày** từ tên
+năm — trường có thể bắt đầu sớm hay muộn, đoán sai sẽ làm lệch phạm vi mọi biểu đồ. Đặt
+làm năm hiện tại là một quyết định riêng, có modal xác nhận nói rõ dữ liệu năm cũ vẫn
+được lưu trữ.
+
+**Khóa tài khoản** (tab *Giáo viên*): *Tạm khóa* / *Từ chối* / *Khôi phục*. Khóa xong,
+phân công lớp ngừng hiệu lực **ngay**, và RLS chặn ở tầng database chứ không chỉ ở giao
+diện. Không cho khóa tài khoản quản trị viên — khóa xong sẽ không còn ai mở lại được.
+
+### Giáo viên tự thiết lập lớp
+
+Giáo viên được duyệt mà **chưa có lớp** thì không thấy dashboard rỗng, mà thấy màn hình
+onboarding ba bước: tài khoản đã duyệt → chọn lớp chủ nhiệm → import danh sách. Nhận lớp
+đi qua `claim_class()`, chỉ mở khi lớp đó **chưa có ai phụ trách** trong năm hiện tại.
+
+> Được duyệt tài khoản **không** đồng nghĩa được truy cập mọi lớp. Rủi ro lớn nhất khi
+> triển khai toàn trường không phải lỗi Excel mà là *hai giáo viên cùng nhận một lớp*.
+
+### Cách cũ: script JSON
+
+Vẫn dùng được, hữu ích khi dựng lại từ đầu.
 
 Mỗi lớp là **một file JSON** trong `admin/` — đó là nguồn duy nhất, không cần chạy SQL.
 Lớp 8A7 năm 2026-2027 đã có sẵn ở `admin/8a7-2026-2027.json`.
@@ -328,15 +419,71 @@ Minh chứng có **bốn dạng** (`evidence.kind`), tối đa 3 mục mỗi nhi
 `kind='text'` là bổ sung mới; ràng buộc `evidence_location` chặn text rỗng, và chặn nhầm
 lẫn giữa ba dạng (text không được có `storage_path`/`external_url`, và ngược lại).
 
+## 8bis. Import danh sách học sinh
+
+Tab **Học sinh** trên dashboard giáo viên. File mẫu:
+`public/templates/Mau_import_danh_sach_hoc_sinh.xlsx` — 3 cột `STT` · `MSHS` ·
+`Họ và tên học sinh`. `STT` chỉ để nhìn, **không bao giờ** là khóa dữ liệu.
+
+Luồng bắt buộc: **đọc file → kiểm tra → xem trước → xác nhận → mới ghi.** Không bao giờ
+upload-rồi-ghi-thẳng. Hộp xác nhận cuối nói rõ **lớp, năm học và số lượng**.
+
+Bản xem trước gọi `preview_class_roster()` — **dùng chung bộ luật** với
+`import_class_roster()`. Nếu để trình duyệt tự đoán, sẽ có ngày giáo viên thấy
+"30 hợp lệ" rồi hệ thống ghi ra con số khác.
+
+### Sáu quy tắc an toàn
+
+| Tình huống | Hệ thống làm gì |
+|---|---|
+| MSHS `0012345` | Giữ nguyên số 0 đầu (đọc dạng text, cột Excel đặt sẵn kiểu Text) |
+| MSHS đã có, **tên khác** | **Không ghi đè** tên chính thức. Báo *"Trong hệ thống: …"*, bỏ qua dòng |
+| Đang học lớp khác **cùng năm** | Báo **xung đột**, không tự chuyển lớp. Admin xử lý |
+| Đã có trong lớp | Không tạo ghi danh trùng |
+| **Vắng mặt** trong file mới | **Không** bị xóa. Vắng mặt ≠ lệnh xóa |
+| Bấm Import hai lần | `client_token` cho ra kết quả cũ, không nhân bản |
+
+Lỗi mạng giữa chừng thì **giữ nguyên bản xem trước** để bấm lại được — token không đổi
+nên bấm lại cũng không ghi hai lần.
+
+Gỡ học sinh khỏi lớp = `is_active = false` ở ghi danh. **Không xóa** học sinh khỏi hệ
+thống; tài khoản, ảnh đại diện và lịch sử giữ nguyên.
+
+`student_import_batches` lưu ai import, lúc nào, lớp nào, bao nhiêu dòng — để đối chiếu
+khi giáo viên báo *"tôi vừa import nhầm file"*.
+
+### Bộ đọc `.xlsx` tự viết
+
+`src/lib/xlsx.js`, không phụ thuộc thư viện ngoài. Bản `xlsx` trên npm dừng ở 0.18.5 và
+còn CVE khi đọc file không tin cậy; bản vá chỉ phát hành ngoài npm. Ở đây chỉ cần đọc ba
+cột chữ nên tự đọc gọn hơn và không kéo theo rủi ro nào. Giải nén bằng
+`DecompressionStream` có sẵn trong trình duyệt (Chrome 103+, Firefox 113+, Safari 16.4+).
+
 ## 8c. Phân tích số liệu
 
-Ba chỗ, một nguồn số:
+Bốn chỗ, một nguồn số:
 
 | Ở đâu | Ai xem | Hàm |
 |---|---|---|
 | Tab **Phân tích** trên dashboard giáo viên | GV, TA có `view_plans` | `class_analytics(class, from, to)` |
 | Cuối trang **Kế hoạch của em** | chính em đó | `student_analytics(student, from, to)` |
 | Tab **Phân tích số liệu** trong popup hồ sơ học sinh | GV / TA phụ trách em | `student_analytics(student, from, to)` |
+| Tab **Thống kê** trong trang Quản trị | admin | `school_analytics(from, to, khối, lớp)` |
+
+### Phạm vi luôn nằm trong một năm học
+
+Bản đầu chỉ lọc theo lớp và khoảng ngày. Với một lớp một năm thì đủ, nhưng khi học sinh
+**lên lớp**, số liệu cá nhân của em sẽ gộp cả năm cũ lẫn năm mới vào một rổ.
+
+Giờ `student_analytics()` **kẹp** khoảng ngày vào trong năm học hiện tại: dù giao diện gửi
+khoảng nào, số liệu cũng không thể tràn sang năm khác. Đã kiểm bằng cách xin thẳng
+`2020-01-01 … 2030-12-31` → trả về đúng `2026-08-01 … 2027-05-31`.
+
+Phạm vi mặc định là **trọn năm học**, cắt ở hôm nay — không phải "30 ngày gần nhất", vì
+đầu năm học sẽ ra biểu đồ trống trơn.
+
+Bảng *Mức độ sử dụng theo lớp* của admin để biết **lớp nào cần hỗ trợ triển khai**, không
+phải bảng xếp hạng lớp.
 
 ### Gộp ở CSDL, không gộp ở trình duyệt
 
@@ -445,12 +592,19 @@ Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên
 
 ## 11. Deploy Edge Functions
 
+Không cần `login` tương tác — đặt sẵn access token là deploy được:
+
 ```bash
-npx supabase login
-npx supabase link --project-ref qzvlwffxvewhfztnxxzb
-npx supabase functions deploy register-student --no-verify-jwt
-npx supabase functions deploy teacher-reset-password --no-verify-jwt
-npx supabase functions deploy student-change-password --no-verify-jwt
+SUPABASE_ACCESS_TOKEN=sbp_... npx supabase functions deploy register-student --project-ref qzvlwffxvewhfztnxxzb --no-verify-jwt
+```
+
+Bốn function cần deploy:
+
+```bash
+npx supabase functions deploy register-student        --project-ref qzvlwffxvewhfztnxxzb --no-verify-jwt
+npx supabase functions deploy teacher-reset-password  --project-ref qzvlwffxvewhfztnxxzb --no-verify-jwt
+npx supabase functions deploy student-change-password --project-ref qzvlwffxvewhfztnxxzb --no-verify-jwt
+npx supabase functions deploy admin-manage-teacher    --project-ref qzvlwffxvewhfztnxxzb --no-verify-jwt
 ```
 
 `verify_jwt = false` là chủ ý — mỗi function tự kiểm quyền bên trong:
@@ -458,8 +612,38 @@ npx supabase functions deploy student-change-password --no-verify-jwt
 | Function | Ai gọi được | Tự kiểm gì |
 |---|---|---|
 | `register-student` | công khai | khớp ghi danh năm hiện hành + MSHS chưa claim |
-| `teacher-reset-password` | giáo viên | đọc Bearer token, phải là teacher **và** phụ trách lớp của HS đó |
-| `student-change-password` | học sinh | phải là student, đúng mật khẩu hiện tại, đủ luật mật khẩu |
+| `teacher-reset-password` | GV / admin | Bearer token; giáo viên phải **đã được duyệt** và phân công **còn hiệu lực** |
+| `student-change-password` | mọi vai trò | đúng mật khẩu hiện tại, đủ luật mật khẩu |
+| `admin-manage-teacher` | admin | đọc `role` **từ CSDL**, không từ email trong token |
+
+> `student-change-password` trước đây chặn `role !== 'student'`. Từ khi quản trị viên tạo
+> được tài khoản giáo viên kèm mật khẩu tạm, cái chặn đó khiến **giáo viên mới kẹt cứng**
+> ở màn hình đổi mật khẩu, không vào được hệ thống. Giờ dùng cho mọi vai trò, và lấy đúng
+> email đăng nhập theo từng vai trò (học sinh là `MSHS@domain`, nhân sự là email thật).
+
+`admin-manage-teacher` có bốn action, `create` và `bulk` dùng chung `upsertTeacher()` nên
+hai đường không thể lệch luật:
+
+| action | Việc |
+|---|---|
+| `create` | Tạo tài khoản + gán lớp trong một bước, trả mật khẩu tạm một lần |
+| `bulk` | Import cả danh sách từ Excel trong một lần gọi |
+| `assign` | Gán thêm lớp cho giáo viên đã có |
+| `reset` | Cấp lại mật khẩu tạm |
+
+## 11b. Kiểm tra hồi quy
+
+```bash
+npm run regress
+```
+
+Chạy thẳng vào Supabase thật, **chỉ đọc** — bước cuối tự kiểm rằng không có dòng nào bị
+đổi. Kiểm 18 điểm: cấu trúc còn đủ, không còn dữ liệu hổng, admin vừa có quyền quản trị
+vừa có quyền giáo viên, học sinh bị chặn đúng chỗ, và số liệu bị kẹp trong năm học.
+
+> Bộ test **không cắm số cứng** — mọi mốc đều chụp ngay đầu lần chạy. Học sinh vẫn đang
+> dùng hệ thống thật nên số nhiệm vụ/phản tư đổi từng ngày; test cắm số cứng sẽ báo động
+> giả rồi mất luôn tác dụng.
 
 ## 12. Quyền dữ liệu
 
@@ -468,10 +652,23 @@ hoạch cho hôm nay trở đi; chỉ sửa/xóa kế hoạch còn ở tương l
 chứng vào ngày học hoặc sau đó; không tự duyệt đăng ký thiết bị; không tự viết nhận xét
 giáo viên; không tự hạ cờ đổi mật khẩu.
 
-**Giáo viên** — đọc toàn bộ dữ liệu **lớp mình phụ trách**; xem minh chứng bằng signed
-URL; duyệt/từ chối đăng ký thiết bị; nhận xét phản tư và đánh dấu đã xử lý yêu cầu hỗ
-trợ; đặt lại mật khẩu học sinh lớp mình; xuất CSV. **Không** sửa hay xóa được kế hoạch,
-tự đánh giá của học sinh.
+**Giáo viên** (đã được duyệt) — đọc toàn bộ dữ liệu **lớp mình phụ trách**; xem minh chứng
+bằng signed URL; duyệt/từ chối đăng ký thiết bị; nhận xét phản tư và đánh dấu đã xử lý yêu
+cầu hỗ trợ; đặt lại mật khẩu học sinh lớp mình; import danh sách lớp; xuất CSV. **Không**
+sửa hay xóa được kế hoạch, tự đánh giá của học sinh.
+
+**Giáo viên chờ duyệt / bị tạm khóa** — quyền dữ liệu gần như bằng người chưa đăng nhập:
+chỉ đọc được hồ sơ của chính mình. Bốn hàm `teaches_*` đều đòi `approval_status='approved'`
+nên gọi thẳng API cũng không đọc được roster hay kế hoạch của lớp nào. Giao diện chỉ hiện
+màn hình *"Tài khoản đang chờ duyệt"* cho dễ hiểu — hàng rào thật nằm ở RLS.
+
+**Quản trị viên** — toàn trường, qua nhánh `is_admin()` trong chính bốn hàm đó nên không
+cần policy riêng cho từng bảng. Quản lý năm học, danh mục lớp, tài khoản và phân công giáo
+viên. Vẫn dùng tài khoản `authenticated` + RLS như mọi người; **service_role key không bao
+giờ xuống frontend**.
+
+**Không ai xem được mật khẩu của ai.** Mật khẩu tạm chỉ tồn tại trong bộ nhớ trình duyệt
+đúng một lần lúc tạo — server chỉ lưu bản băm.
 
 Ranh giới được giữ bằng ba lớp: RLS theo dòng, grant theo bảng, và trigger tách cột
 (`plans_guard_columns`, `reflections_guard_columns`) — vì RLS chặn được dòng nhưng không
@@ -485,18 +682,27 @@ chặn được cột.
 
 ```text
 src/
-  components/   Layout · ProtectedRoute · PasswordGate · StatusBadge
-  context/      AuthContext (phiên, hồ sơ, lớp/năm, cờ khôi phục)
+  components/   Layout · ProtectedRoute · PasswordGate · TeacherGate · StatusBadge
+                Avatar · ChatPanel · Analytics · SchoolAnalytics
+                SessionRegister · ClassSchedule · ClassSwitcher
+                RosterPanel · StudentImport · TeacherImport · TeacherOnboarding
+  context/      AuthContext (phiên, hồ sơ, lớp/năm, danh sách lớp, cờ khôi phục)
   lib/          supabase.js (client, email học sinh, gọi Edge Function)
-  pages/        Home · Guide · Register · Login · Student · Teacher · NotFound
-  utils/        date.js · password.js
+                xlsx.js      (đọc .xlsx, không phụ thuộc thư viện ngoài)
+  pages/        Home · Guide · Register · Login · Student · Teacher · Ta · Admin
+  utils/        date.js · password.js · roles.js
+public/
+  templates/    Mau_import_giao_vien.xlsx · Mau_import_danh_sach_hoc_sinh.xlsx
 supabase/
-  schema.sql
+  schema.sql            # lõi — chạy trước
+  schema-2-school.sql   # vai trò, danh mục lớp, bảng import
+  schema-3-rls.sql      # quyền, nghiệp vụ, số liệu, chuyển dữ liệu cũ
   functions/
     _shared/common.ts            # CORS, luật mật khẩu
     register-student/
     teacher-reset-password/
     student-change-password/
+    admin-manage-teacher/        # tạo / import / gán lớp / cấp lại mật khẩu
 scripts/
   create-teacher.mjs             # tạo 1 giáo viên từ .env.admin
   setup-class.mjs                # năm học + lớp + giáo viên + ghi danh
