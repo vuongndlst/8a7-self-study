@@ -408,7 +408,12 @@ for each row execute function public.set_updated_at();
 
 create or replace function public.is_teacher()
 returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.profiles where id = auth.uid() and role = 'teacher');
+  -- 'admin' cũng là nhân sự lớp. Định nghĩa đầy đủ nằm ở schema-3-rls.sql; bản
+  -- này giữ khớp để chạy lại riêng schema.sql không âm thầm khóa quản trị viên.
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role in ('teacher','admin')
+  );
 $$;
 
 -- Giáo viên đang đăng nhập có phụ trách lớp này không?
@@ -794,7 +799,9 @@ $$;
 create or replace function public.classes_guard_columns()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if auth.uid() is null then
+  -- Service role (migration/script) và quản trị viên toàn quyền; giáo viên thì
+  -- chỉ được đổi đúng cấu hình đăng ký của lớp mình.
+  if auth.uid() is null or public.is_admin() then
     return new;
   end if;
   new.id             := old.id;

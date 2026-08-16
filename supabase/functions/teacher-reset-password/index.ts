@@ -16,9 +16,15 @@ Deno.serve(async (req) => {
     const { data: userData, error: userError } = await admin.auth.getUser(token)
     if (userError || !userData.user) return json({ ok: false, error: 'Phiên đăng nhập không hợp lệ.' }, 401)
 
-    const { data: teacher } = await admin.from('profiles')
-      .select('role, full_name').eq('id', userData.user.id).eq('role', 'teacher').maybeSingle()
-    if (!teacher) return json({ ok: false, error: 'Không có quyền giáo viên.' }, 403)
+    // Quản trị viên cũng đặt lại được mật khẩu; giáo viên thì phải ĐÃ ĐƯỢC DUYỆT.
+    // Giáo viên đang chờ duyệt hoặc bị tạm khóa gọi thẳng vào đây cũng bị chặn.
+    const { data: staff } = await admin.from('profiles')
+      .select('role, full_name, approval_status').eq('id', userData.user.id).maybeSingle()
+    const isAdmin = staff?.role === 'admin'
+    const isActiveTeacher = staff?.role === 'teacher' && staff?.approval_status === 'approved'
+    if (!isAdmin && !isActiveTeacher) {
+      return json({ ok: false, error: 'Không có quyền giáo viên.' }, 403)
+    }
 
     const { studentId, newPassword } = await req.json()
     if (!studentId) return json({ ok: false, error: 'Thiếu học sinh cần đặt lại mật khẩu.' }, 400)
@@ -38,13 +44,16 @@ Deno.serve(async (req) => {
       .map((r: any) => r.class_id)
     if (classIds.length === 0) return json({ ok: false, error: 'Học sinh không thuộc lớp đang hoạt động.' }, 403)
 
-    const { data: link } = await admin
-      .from('class_teachers')
-      .select('class_id')
-      .eq('teacher_id', userData.user.id)
-      .in('class_id', classIds)
-      .maybeSingle()
-    if (!link) return json({ ok: false, error: 'Học sinh này không thuộc lớp bạn phụ trách.' }, 403)
+    if (!isAdmin) {
+      const { data: link } = await admin
+        .from('class_teachers')
+        .select('class_id')
+        .eq('teacher_id', userData.user.id)
+        .eq('status', 'active')          // phân công đã gỡ thì hết quyền ngay
+        .in('class_id', classIds)
+        .maybeSingle()
+      if (!link) return json({ ok: false, error: 'Học sinh này không thuộc lớp bạn phụ trách.' }, 403)
+    }
 
     const cleanPassword = String(newPassword || '')
     if (!validStudentPassword(cleanPassword, student.mshs)) {

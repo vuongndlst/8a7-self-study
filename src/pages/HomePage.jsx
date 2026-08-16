@@ -1,12 +1,13 @@
 import { ArrowRight, BookOpenCheck, CalendarDays, CheckCircle2, FileUp, LockKeyhole, ShieldCheck, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { homeForRole } from '../utils/roles'
 
 const BRAND_MARK = import.meta.env.VITE_BRAND_MARK || '8A7'
 
 export default function HomePage() {
   const { profile } = useAuth()
-  const destination = profile?.role === 'teacher' ? '/teacher' : profile?.role === 'student' ? '/student' : '/login'
+  const destination = homeForRole(profile?.role)
   return <div className="page home-page">
     <section className="hero hero-polished">
       <div className="hero-copy">

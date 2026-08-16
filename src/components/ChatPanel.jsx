@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Send } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { roleLabel } from '../utils/roles'
 import { useAuth } from '../context/AuthContext'
 
 // Một luồng cho mỗi học sinh. Giáo viên và trợ giảng (nếu được bật quyền chat)
@@ -72,7 +73,7 @@ export default function ChatPanel({ conversationId, studentName, compact }) {
             const me = m.sender_id === profile.id
             const who = senders[m.sender_id]
             return <div key={m.id} className={`chat-msg ${me ? 'mine' : ''}`}>
-              {!me && <span className="chat-who">{who?.full_name ?? '—'}{who?.role === 'teacher' ? ' · GV' : ''}</span>}
+              {!me && <span className="chat-who">{who?.full_name ?? '—'}{roleLabel(who?.role)}</span>}
               <p>{m.body}</p>
               <em>{new Date(m.created_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</em>
             </div>

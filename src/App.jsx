@@ -9,6 +9,7 @@ import RegisterPage from './pages/RegisterPage'
 import StudentPage from './pages/StudentPage'
 import TeacherPage from './pages/TeacherPage'
 import TaPage from './pages/TaPage'
+import AdminPage from './pages/AdminPage'
 import NotFoundPage from './pages/NotFoundPage'
 import { useAuth } from './context/AuthContext'
 
@@ -28,6 +29,7 @@ export default function App() {
       <Route path="/student" element={<ProtectedRoute role="student"><StudentPage /></ProtectedRoute>} />
       <Route path="/ta" element={<ProtectedRoute role="student"><TaPage /></ProtectedRoute>} />
       <Route path="/teacher" element={<ProtectedRoute role="teacher"><TeacherPage /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute role="admin"><AdminPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   </Layout>

@@ -386,3 +386,19 @@ td .pill-todo{font-size:10.5px}
 .span-chip{display:inline-block;margin-left:7px;background:#dceae2;color:var(--green);font-size:10.5px;
   font-weight:800;padding:2px 7px;border-radius:999px;vertical-align:middle;letter-spacing:.2px}
 .toggle-row.span-row{margin:0 0 10px;padding:9px 11px;background:#f3f7f4;border-radius:10px}
+
+/* ---------- Man hinh chan giao vien chua duoc duyet ---------- */
+.gate-card{text-align:center;padding:40px 30px;display:grid;gap:14px;justify-items:center;max-width:560px;margin:40px auto}
+.gate-card>svg{color:var(--green)}
+.gate-card.danger>svg{color:var(--danger)}
+.gate-card h1{margin:0;font-size:26px}
+.gate-card p{margin:0;color:var(--muted);line-height:1.65}
+.gate-card .form-actions{margin-top:8px}
+
+/* ---------- Trang quan tri ---------- */
+.admin-page .grade-block{margin-top:16px}
+.admin-page .grade-block h3{margin:0 0 8px;font-size:15px;color:var(--muted)}
+.missing-chip.ok{border-color:#bcd3c5;background:#f4f9f6}
+.missing-chip.ok small{color:var(--green)}
+.button.small{padding:6px 11px;font-size:12.5px}
+.row-actions{display:flex;gap:6px;flex-wrap:wrap}

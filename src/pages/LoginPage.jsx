@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { GraduationCap, KeyRound, ShieldCheck } from 'lucide-react'
 import { supabase, studentEmail, STUDENT_EMAIL_DOMAIN } from '../lib/supabase'
+import { homeForRole, isStaffRole } from '../utils/roles'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -23,7 +24,7 @@ export default function LoginPage() {
     setBusy(false)
     if (err) return setError('MSHS hoặc mật khẩu chưa đúng.')
     const { data: p } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
-    navigate(p?.role === 'teacher' ? '/teacher' : '/student')
+    navigate(homeForRole(p?.role))
   }
 
   const loginTeacher = async (e) => {
@@ -34,8 +35,9 @@ export default function LoginPage() {
     setBusy(false)
     if (err) return setError('Email hoặc mật khẩu giáo viên chưa đúng.')
     const { data: p } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
-    if (p?.role !== 'teacher') { await supabase.auth.signOut(); return setError('Tài khoản này không có quyền giáo viên.') }
-    navigate('/teacher')
+    // Quản trị viên cũng đăng nhập bằng form này — trước đây bị đăng xuất ngay tại đây.
+    if (!isStaffRole(p?.role)) { await supabase.auth.signOut(); return setError('Tài khoản này không có quyền giáo viên.') }
+    navigate(homeForRole(p?.role))
   }
 
   return <div className="page auth-page auth-wide login-layout">
