@@ -166,21 +166,26 @@ các file `VITE_*`.
 
 ## 4. Dựng cơ sở dữ liệu
 
-Supabase Dashboard → SQL Editor → chạy **ba file, đúng thứ tự này**:
+Supabase Dashboard → SQL Editor → chạy **bốn file, đúng thứ tự này**:
 
 ```text
-1. supabase/schema.sql          lõi: kế hoạch, phản tư, minh chứng, chat, thông báo
-2. supabase/schema-2-school.sql lớp nền tảng toàn trường: vai trò, danh mục lớp, import
-3. supabase/schema-3-rls.sql    quyền, nghiệp vụ, số liệu, và chuyển dữ liệu cũ
+1. supabase/schema.sql             lõi: kế hoạch, phản tư, minh chứng, chat, thông báo
+2. supabase/schema-2-school.sql    nền tảng toàn trường: vai trò, danh mục lớp, import
+3. supabase/schema-3-rls.sql       quyền, nghiệp vụ, số liệu, và chuyển dữ liệu cũ
+4. supabase/schema-4-hardening.sql thu hồi quyền thừa, chỉ mục, chống lạm dụng
 ```
 
-Thứ tự có ý nghĩa: file 3 định nghĩa lại các hàm quyền của file 1 để thêm `admin` và
-điều kiện "đã được duyệt", và phần **chuyển dữ liệu cũ nằm ở cuối file 3** — sau khi mọi
-trigger đã được thay xong. Chạy sớm hơn thì trigger bản cũ sẽ âm thầm hoàn nguyên.
+Thứ tự có ý nghĩa:
 
-> Cả ba **chạy lại nhiều lần được và không xóa dữ liệu**: chỉ `create … if not exists`,
+- **File 3** định nghĩa lại các hàm quyền của file 1 để thêm `admin` và điều kiện "đã được
+  duyệt". Phần **chuyển dữ liệu cũ nằm ở cuối file 3** — sau khi mọi trigger đã được thay
+  xong. Chạy sớm hơn thì trigger bản cũ sẽ âm thầm hoàn nguyên.
+- **File 4 phải chạy sau cùng.** Nó duyệt danh sách bảng/hàm *đang có* rồi thu hồi quyền;
+  chạy trước khi ba file kia tạo xong thì sẽ bỏ sót đúng những thứ mới tạo.
+
+> Cả bốn **chạy lại nhiều lần được và không xóa dữ liệu**: chỉ `create … if not exists`,
 > `alter … add column if not exists`, `create or replace function`, và dựng lại policy.
-> Nâng cấp hệ thống đang chạy thật chỉ cần chạy lại đủ ba file.
+> Nâng cấp hệ thống đang chạy thật chỉ cần chạy lại đủ bốn file.
 
 Bootstrap quản trị viên nằm ở cuối file 3: tài khoản `ict.vuongnd@lsts.edu.vn` được đặt
 `role='admin'`. Email chỉ dùng để **tìm đúng tài khoản một lần**; sau bước đó quyền nằm ở
@@ -695,6 +700,53 @@ hai đường không thể lệch luật:
 | `assign` | Gán thêm lớp cho giáo viên đã có |
 | `reset` | Cấp lại mật khẩu tạm cho một người |
 | `bulk-reset` | Cấp lại cho nhiều người, tải về CSV — lối thoát khi lỡ mất mật khẩu tạm |
+
+## 11a. Bảo mật và chịu tải
+
+### Quyền cấp bảng: hai lớp, không phải một
+
+Supabase cấp sẵn **toàn quyền cho `anon` và `authenticated`** trên mọi bảng mới tạo trong
+schema `public`. Bảng cũ đã thu hồi thủ công, nhưng bảng thêm ở file 2 và 3 thì chưa —
+kiểm tra thực tế phát hiện `anon` (người **chưa đăng nhập**) đang có
+`INSERT/UPDATE/DELETE/TRUNCATE` trên `audit_log`, `class_catalog`,
+`student_import_batches`, `student_import_rows`, `class_access_requests`.
+
+RLS vẫn chặn từng dòng nên chưa có rò rỉ. Nhưng như thế là đang dựa vào **một** lớp phòng
+thủ: chỉ cần một bảng sau này quên bật policy là thủng. File 4 thu hồi sạch của `anon`
+rồi cấp lại đúng phần `authenticated` cần.
+
+Tương tự với hàm: **31 hàm** `security definer` đang cho `anon` gọi. Phần lớn trả về
+`false` vì `auth.uid()` là NULL, nhưng `setting_text()` thì lộ được cấu hình hệ thống, và
+các hàm trigger không có lý do gì để lộ ra API. Sau khi gia cố:
+
+| | Trước | Sau |
+|---|---|---|
+| Bảng `anon` chạm được | 8 | **0** |
+| Hàm `anon` gọi được | 31 | **0** |
+
+`analytics_build()` / `analytics_build_many()` **không cấp cho ai cả** — chúng không tự
+kiểm quyền, chỉ được gọi từ trong ba hàm bọc ngoài đã kiểm sẵn.
+
+### Chịu tải
+
+Hiện 1 lớp / ~120 nhiệm vụ nên truy vấn nào cũng nhanh. Ở quy mô 30 lớp (~900 học sinh,
+vài chục nghìn nhiệm vụ mỗi năm) thì thiếu chỉ mục sẽ thành quét toàn bảng mỗi lần mở
+dashboard. File 4 thêm 7 chỉ mục theo đúng hình dạng truy vấn thật của giao diện.
+
+`statement_timeout` do Supabase đặt sẵn: `authenticated` 8s, `anon` 3s — một truy vấn hỏng
+không giữ kết nối mãi.
+
+Ba giới hạn nghiệp vụ chống lạm dụng, đặt ở trigger nên gọi thẳng API cũng không lách được:
+
+| Giới hạn | Ngăn |
+|---|---|
+| ≤ 20 nhiệm vụ mỗi buổi | Một tài khoản làm phình bảng `plans` |
+| ≤ 20 tin nhắn mỗi phút | Spam luồng chat |
+| `protect_last_admin` | Mất sạch quản trị viên (đã xảy ra thật — xem mục 12) |
+
+`prune_old_data()` chạy 2 giờ sáng Chủ nhật: xóa thông báo **đã đọc** cũ hơn 120 ngày và
+chi tiết từng dòng import cũ hơn 90 ngày. Bản tóm tắt `student_import_batches` **giữ vĩnh
+viễn** để còn đối chiếu khi giáo viên báo nhập nhầm file.
 
 ## 11b. Kiểm tra hồi quy
 

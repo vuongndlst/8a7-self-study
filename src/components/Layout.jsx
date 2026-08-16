@@ -17,15 +17,18 @@ export default function Layout({ children }) {
   const openPlan = () => navigate(isStaff ? '/teacher' : '/student')
   const openChat = () => navigate(isStaff ? '/teacher' : '/student')
 
-  // Phù hiệu góc trái chạy theo LỚP đang xem, không còn cố định "8A7":
-  // học sinh lớp nào vào cũng thấy đúng lớp mình.
+  // Logo trường luôn đứng đầu; phù hiệu lớp đứng cạnh và chạy theo LỚP đang xem
+  // nên học sinh lớp nào vào cũng thấy đúng lớp mình.
   const mark = context.className || BRAND_MARK
   const sub = context.yearName ? `Năm học ${context.yearName}` : 'Plan · Do · Reflect'
 
   return <div className="app-shell">
     <header className="topbar">
-      <Link className="brand" to="/"><span className="brand-mark">{mark}</span>
-        <span><strong>Self-Study</strong><small>{sub}</small></span></Link>
+      <Link className="brand" to="/">
+        <img className="brand-logo" src={`${import.meta.env.BASE_URL}logo.svg`} alt="Logo Trường Đinh Thiện Lý" />
+        <span className="brand-mark">{mark}</span>
+        <span className="brand-text"><strong>Self-Study</strong><small>{sub}</small></span>
+      </Link>
       <nav>
         <Link className={active('/') ? 'active' : ''} to="/"><Home size={17} /> <span>Trang chủ</span></Link>
         <Link className={active('/guide') ? 'active' : ''} to="/guide"><BookOpen size={17} /> <span>Hướng dẫn</span></Link>
