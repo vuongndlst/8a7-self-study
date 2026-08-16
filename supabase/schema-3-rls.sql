@@ -473,6 +473,39 @@ revoke all on function public.norm_mshs(text), public.norm_name(text) from publi
 grant execute on function public.norm_mshs(text), public.norm_name(text) to authenticated;
 
 -- ============================================================================
+--  15b. KHÔNG BAO GIỜ ĐƯỢC PHÉP CÒN 0 QUẢN TRỊ VIÊN
+-- ============================================================================
+-- Đã xảy ra thật: danh sách giáo viên đầu năm có cả dòng của chính quản trị viên
+-- (vì admin cũng chủ nhiệm một lớp). Import ghi đè role='teacher' lên hồ sơ đó,
+-- hệ thống mất sạch admin và không ai vào lại được trang quản trị.
+--
+-- Edge Function đã được vá, nhưng đó là lớp bảo vệ ở ứng dụng. Đây là lớp ở
+-- database: dù lệnh đến từ đâu — kể cả service role — cũng không hạ được người
+-- admin CUỐI CÙNG.
+create or replace function public.protect_last_admin()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.role = 'admin' and new.role is distinct from 'admin' then
+    if (select count(*) from public.profiles where role = 'admin') <= 1 then
+      raise exception 'Không thể hạ quyền quản trị viên cuối cùng. Hãy chỉ định người khác làm quản trị viên trước.';
+    end if;
+  end if;
+  -- Khóa/từ chối tài khoản admin cuối cùng cũng nguy hiểm y hệt.
+  if old.role = 'admin' and new.role = 'admin'
+     and new.approval_status is distinct from 'approved'
+     and (select count(*) from public.profiles
+          where role = 'admin' and approval_status = 'approved') <= 1 then
+    raise exception 'Không thể khóa quản trị viên cuối cùng.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_protect_last_admin on public.profiles;
+create trigger trg_protect_last_admin before update on public.profiles
+for each row execute function public.protect_last_admin();
+
+-- ============================================================================
 --  16. SỐ LIỆU THEO NĂM HỌC
 -- ============================================================================
 -- analytics_build() cũ chỉ lọc theo lớp và khoảng ngày. Với một lớp một năm thì

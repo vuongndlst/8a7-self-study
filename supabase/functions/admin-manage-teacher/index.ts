@@ -110,11 +110,13 @@ Deno.serve(async (req) => {
       let created = false
       let password: string | null = null
 
+      let existingRole: string | null = null
       const { data: byProfile } = await admin.from('profiles')
         .select('id, role').eq('email', email).maybeSingle()
       if (byProfile) {
         if (byProfile.role === 'student') return { error: 'Email này đang là tài khoản học sinh.' }
         userId = byProfile.id
+        existingRole = byProfile.role
       } else {
         // profiles.email có thể chưa điền với tài khoản cũ — tra thêm ở auth.
         const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 })
@@ -131,9 +133,13 @@ Deno.serve(async (req) => {
       }
 
       const patch: Record<string, unknown> = {
-        id: userId, role: 'teacher', full_name: fullName, email,
+        id: userId, full_name: fullName, email,
         approval_status: 'approved', approved_by: actor, approved_at: new Date().toISOString(),
       }
+      // KHÔNG hạ quyền quản trị viên. Danh sách giáo viên đầu năm thường có cả
+      // dòng của chính admin (vì admin cũng chủ nhiệm một lớp) — ghi đè role ở
+      // đây một lần là cả hệ thống không còn admin nào và không ai vào lại được.
+      if (existingRole !== 'admin') patch.role = 'teacher'
       // Chỉ bắt đổi mật khẩu với tài khoản MỚI. Tài khoản cũ giữ nguyên mật khẩu
       // thầy/cô đang dùng — đây chính là ca "giáo viên cũ, năm mới".
       if (created) patch.must_change_password = true
@@ -214,6 +220,34 @@ Deno.serve(async (req) => {
       const r = await assignClass(teacherId, catalogId, yearId)
       if (r.error) return json({ ok: false, error: r.error }, 409)
       return json({ ok: true, daTaoTaiKhoan: false, lop: r.classCode, hoTen: t.full_name })
+    }
+
+    // ---------- Cấp lại mật khẩu cho NHIỀU giáo viên ----------
+    // Mật khẩu tạm chỉ hiện một lần lúc tạo. Nếu quản trị viên lỡ đóng cửa sổ
+    // trước khi chép, không có cách nào xem lại (server chỉ lưu bản băm) —
+    // đường ra duy nhất là cấp lại. Đây chính là đường đó.
+    if (action === 'bulk-reset') {
+      const ids: string[] = Array.isArray(body.teacherIds) ? body.teacherIds : []
+      if (!ids.length) return json({ ok: false, error: 'Chưa chọn giáo viên nào.' }, 400)
+      if (ids.length > 100) return json({ ok: false, error: 'Tối đa 100 tài khoản mỗi lần.' }, 400)
+
+      const { data: list } = await admin.from('profiles')
+        .select('id, full_name, email, role').in('id', ids)
+      const rows: any[] = []
+      for (const t of list ?? []) {
+        // Không đụng vào tài khoản quản trị viên qua đường hàng loạt.
+        if (t.role !== 'teacher') { rows.push({ ...t, loi: 'Không phải tài khoản giáo viên' }); continue }
+        const pw = tempPassword()
+        const { error } = await admin.auth.admin.updateUserById(t.id, { password: pw })
+        if (error) { rows.push({ ...t, loi: error.message }); continue }
+        await admin.from('profiles').update({ must_change_password: true }).eq('id', t.id)
+        rows.push({ id: t.id, full_name: t.full_name, email: t.email, matKhauTam: pw })
+      }
+      await admin.from('audit_log').insert({
+        actor_id: actor, action: 'teacher.bulk_password_reset', entity: 'profiles', entity_id: null,
+        metadata: { so_tai_khoan: rows.filter((r) => r.matKhauTam).length },
+      })
+      return json({ ok: true, dong: rows })
     }
 
     // ---------- Đặt lại mật khẩu giáo viên ----------

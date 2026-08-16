@@ -94,6 +94,47 @@ Mật khẩu tạm bỏ các ký tự dễ đọc nhầm khi chép tay (`0/O`, `
 > không có quyền quản trị Entra ID để tạo app `Mail.Send`, và cũng không bật được SMTP
 > AUTH. Mọi nhắc nhở vì thế hiển thị thẳng trong ứng dụng thay vì gửi thư.
 
+## 2b. Email: quên mật khẩu
+
+Nút **Quên mật khẩu?** có ở cả hai tab đăng nhập. Học sinh nhập MSHS (thư đi tới
+`MSHS@lsts.edu.vn`), giáo viên nhập email trường.
+
+Frontend đã sẵn sàng. Phần còn lại là **cấu hình SMTP trong Supabase** — chưa cấu hình thì
+Supabase vẫn nhận lệnh nhưng thư không bao giờ tới.
+
+Supabase Dashboard → Project Settings → **Authentication → SMTP Settings** → *Enable custom
+SMTP*:
+
+| Trường | Gmail | Google Workspace (khuyến nghị) |
+|---|---|---|
+| Host | `smtp.gmail.com` | `smtp.gmail.com` |
+| Port | `465` (SSL) hoặc `587` (TLS) | như trái |
+| Username | địa chỉ Gmail đầy đủ | email trường dùng để gửi |
+| Password | **App Password** 16 ký tự | như trái |
+| Sender email | trùng username | ví dụ `noreply@lsts.edu.vn` |
+
+App Password lấy ở [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+— **bắt buộc bật xác minh 2 bước trước**, và **không** dùng mật khẩu đăng nhập thường.
+
+Sau đó vào **Authentication → URL Configuration**, thêm site URL vào *Redirect URLs*:
+
+```text
+https://vuongndlst.github.io/8a7-self-study/
+```
+
+Thiếu bước này thì bấm link trong email sẽ ra trang trắng.
+
+> **Giới hạn cần biết.** Gmail cá nhân ~500 thư/ngày, Workspace ~2000. Đủ cho việc đặt lại
+> mật khẩu, **không đủ** để gửi nhắc nhở hàng loạt cho vài trăm học sinh mỗi ngày. Với
+> nhắc nhở, xem mục 10.
+>
+> Supabase cũng giới hạn tần suất gửi (mặc định ~4 thư/giờ mỗi địa chỉ). Nới ở
+> **Authentication → Rate Limits** nếu cần.
+
+Đặt lại mật khẩu bằng email **không thay thế** đường cũ: giáo viên vẫn cấp được mật khẩu
+tạm cho học sinh lớp mình, và quản trị viên vẫn cấp lại được cho giáo viên. Trường hợp học
+sinh không mở được hộp thư trường thì đó vẫn là đường duy nhất.
+
 ## 3. Cài đặt và chạy
 
 ```bash
@@ -161,8 +202,23 @@ Tải file mẫu ngay trong hộp thoại (`public/templates/Mau_import_giao_vie
 thầy cô đang dùng, không mất lịch sử đã xử lý. Đây chính là ca *"giáo viên cũ, năm mới"*
 mà mỗi năm đều gặp.
 
-Giáo viên **mới** nhận mật khẩu tạm hiện **đúng một lần** (server chỉ lưu bản băm), và bị
-bắt tự đổi ở lần đăng nhập đầu.
+### Mật khẩu tạm — không có mật khẩu mặc định
+
+**Không có mật khẩu mặc định dùng chung.** Mỗi giáo viên mới nhận một mật khẩu ngẫu nhiên
+12 ký tự, sinh riêng cho từng người. Cố ý như vậy: một mật khẩu mặc định dùng chung nghĩa
+là ai biết quy luật cũng đăng nhập được vào tài khoản đồng nghiệp chưa kích hoạt.
+
+Mật khẩu bỏ các ký tự dễ nhìn nhầm (`0/O`, `1/l/I`) vì thầy cô hay đọc qua điện thoại.
+
+Nó hiện **đúng một lần** — server chỉ lưu bản băm nên **không có cách nào xem lại**. Sau
+khi import, bấm ngay **Chép toàn bộ danh sách**.
+
+**Lỡ đóng cửa sổ trước khi chép?** Vào tab *Giáo viên*, lọc **Chưa đăng nhập**, bấm
+**Cấp lại mật khẩu (N)** → tải về CSV. Mật khẩu cũ ngừng hoạt động ngay.
+
+> Danh sách giáo viên đầu năm thường có **cả dòng của chính quản trị viên** (vì admin cũng
+> chủ nhiệm một lớp). Import **không** hạ quyền admin — đã có bảo vệ ở cả Edge Function
+> lẫn trigger `protect_last_admin` trong database. Xem mục 12.
 
 **Năm học** (tab *Năm học*): nút *Tạo năm học*. Hệ thống **không tự đoán ngày** từ tên
 năm — trường có thể bắt đầu sớm hay muộn, đoán sai sẽ làm lệch phạm vi mọi biểu đồ. Đặt
@@ -621,7 +677,7 @@ npx supabase functions deploy admin-manage-teacher    --project-ref qzvlwffxvewh
 > ở màn hình đổi mật khẩu, không vào được hệ thống. Giờ dùng cho mọi vai trò, và lấy đúng
 > email đăng nhập theo từng vai trò (học sinh là `MSHS@domain`, nhân sự là email thật).
 
-`admin-manage-teacher` có bốn action, `create` và `bulk` dùng chung `upsertTeacher()` nên
+`admin-manage-teacher` có năm action, `create` và `bulk` dùng chung `upsertTeacher()` nên
 hai đường không thể lệch luật:
 
 | action | Việc |
@@ -629,7 +685,8 @@ hai đường không thể lệch luật:
 | `create` | Tạo tài khoản + gán lớp trong một bước, trả mật khẩu tạm một lần |
 | `bulk` | Import cả danh sách từ Excel trong một lần gọi |
 | `assign` | Gán thêm lớp cho giáo viên đã có |
-| `reset` | Cấp lại mật khẩu tạm |
+| `reset` | Cấp lại mật khẩu tạm cho một người |
+| `bulk-reset` | Cấp lại cho nhiều người, tải về CSV — lối thoát khi lỡ mất mật khẩu tạm |
 
 ## 11b. Kiểm tra hồi quy
 
@@ -669,6 +726,19 @@ giờ xuống frontend**.
 
 **Không ai xem được mật khẩu của ai.** Mật khẩu tạm chỉ tồn tại trong bộ nhớ trình duyệt
 đúng một lần lúc tạo — server chỉ lưu bản băm.
+
+### Không bao giờ được phép còn 0 quản trị viên
+
+**Đã xảy ra thật.** Danh sách giáo viên đầu năm có cả dòng của chính quản trị viên (vì
+admin cũng chủ nhiệm một lớp). Import ghi đè `role='teacher'` lên hồ sơ đó → hệ thống mất
+sạch admin, không ai vào lại được trang quản trị. Phải khôi phục bằng service role.
+
+Hai lớp bảo vệ, cả hai đều cần vì chúng chặn ở hai tầng khác nhau:
+
+1. **Edge Function** — `upsertTeacher()` không gán `role` khi hồ sơ hiện tại đã là `admin`.
+2. **Trigger `protect_last_admin`** — chặn hạ quyền *hoặc* khóa người admin **cuối cùng**,
+   ở tầng database. Đã kiểm: **service role cũng không vượt qua được**. Có admin thứ hai
+   thì lại hạ được người kia bình thường — đây là chốt an toàn, không phải chặn cứng.
 
 Ranh giới được giữ bằng ba lớp: RLS theo dòng, grant theo bảng, và trigger tách cột
 (`plans_guard_columns`, `reflections_guard_columns`) — vì RLS chặn được dòng nhưng không

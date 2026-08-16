@@ -9,6 +9,7 @@ import { formatDate, todayISO } from '../utils/date'
 import Avatar from '../components/Avatar'
 import TeacherImport from '../components/TeacherImport'
 import SchoolAnalytics from '../components/SchoolAnalytics'
+import BulkPasswordModal from '../components/BulkPasswordModal'
 
 const STATUS = {
   pending:   { label: 'Chờ duyệt',   tone: 'warn' },
@@ -42,6 +43,7 @@ export default function AdminPage() {
   const [newYear, setNewYear] = useState(false)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
+  const [bulkPw, setBulkPw] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -89,7 +91,8 @@ export default function AdminPage() {
   const shownTeachers = useMemo(() => {
     const q = search.trim().toLowerCase()
     return teachers.filter((t) => {
-      if (filter !== 'all' && t.approval_status !== filter) return false
+      if (filter === 'never' && !t.must_change_password) return false
+      if (filter !== 'all' && filter !== 'never' && t.approval_status !== filter) return false
       if (q && !`${t.full_name} ${t.email ?? ''} ${(classOfTeacher[t.id] ?? []).join(' ')}`.toLowerCase().includes(q)) return false
       return true
     })
@@ -179,6 +182,11 @@ export default function AdminPage() {
             <p>Tạo tài khoản kèm lớp trong một bước. Giáo viên đã có tài khoản thì chỉ cần gán thêm lớp — không tạo lại.</p>
           </div>
           <div className="button-row">
+            {shownTeachers.filter((t) => t.role === 'teacher').length > 1 &&
+              <button className="button ghost" title="Cấp lại mật khẩu tạm cho các thầy/cô đang hiển thị"
+                      onClick={() => setBulkPw(shownTeachers.filter((t) => t.role === 'teacher'))}>
+                <KeyRound size={17} /> Cấp lại mật khẩu ({shownTeachers.filter((t) => t.role === 'teacher').length})
+              </button>}
             <button className="button ghost" onClick={() => setImporting(true)}><FileSpreadsheet size={17} /> Import từ Excel</button>
             <button className="button primary" onClick={() => setTeacherForm({ mode: 'create' })}><UserPlus size={17} /> Thêm giáo viên</button>
           </div>
@@ -189,7 +197,8 @@ export default function AdminPage() {
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm tên, email, lớp…" /></div>
           <div className="quick-views">
             {[['all', 'Tất cả', teachers.length], ['pending', 'Chờ duyệt', pending.length],
-              ['approved', 'Hoạt động', active.length], ['suspended', 'Tạm khóa', suspended.length]]
+              ['approved', 'Hoạt động', active.length], ['suspended', 'Tạm khóa', suspended.length],
+              ['never', 'Chưa đăng nhập', teachers.filter((t) => t.must_change_password).length]]
               .map(([k, label, n]) => <button key={k} className={`chip-btn ${filter === k ? 'on' : ''}`}
                 onClick={() => setFilter(k)}>{label} <b>{n}</b></button>)}
           </div>
@@ -302,6 +311,8 @@ export default function AdminPage() {
         if (res.canhBao) setMsg('⚠ ' + res.canhBao)
         load()
       }} />}
+
+    {bulkPw && <BulkPasswordModal teachers={bulkPw} onClose={() => setBulkPw(null)} onDone={load} />}
 
     {credential && <CredentialModal data={credential} onClose={() => { setCredential(null); load() }} />}
 

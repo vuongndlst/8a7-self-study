@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { GraduationCap, KeyRound, ShieldCheck } from 'lucide-react'
 import { supabase, studentEmail, STUDENT_EMAIL_DOMAIN } from '../lib/supabase'
 import { homeForRole, isStaffRole } from '../utils/roles'
+import ForgotPassword from '../components/ForgotPassword'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -14,6 +15,7 @@ export default function LoginPage() {
   // Không điền sẵn email giáo viên: trang đăng nhập là trang công khai, và trình
   // duyệt của thầy cô sẽ tự nhớ sau lần đăng nhập đầu tiên.
   const [teacher, setTeacher] = useState({ email: '', password: '' })
+  const [forgot, setForgot] = useState(null)
 
   const loginStudent = async (e) => {
     e.preventDefault(); setBusy(true); setError(''); setNotice('')
@@ -84,7 +86,8 @@ export default function LoginPage() {
         <button className="button primary full large" disabled={busy}><KeyRound size={18} />{busy ? 'Đang đăng nhập…' : 'Đăng nhập học sinh'}</button>
         <p className="auth-switch">
           Chưa có tài khoản? <Link to="/register">Đăng ký lần đầu</Link><br />
-          <span>Quên mật khẩu? Báo giáo viên chủ nhiệm để nhận mật khẩu tạm, rồi em tự đặt lại.</span>
+          <button type="button" className="link-button" onClick={() => setForgot('student')}>Quên mật khẩu?</button>
+          <span> — hoặc báo giáo viên chủ nhiệm để nhận mật khẩu tạm.</span>
         </p>
       </form> : <form key="teacher" onSubmit={loginTeacher}>
         <label htmlFor="login-teacher-email">Email giáo viên</label>
@@ -97,7 +100,12 @@ export default function LoginPage() {
                autoComplete="current-password" required />
         {error && <div className="form-error">{error}</div>}
         <button className="button primary full large" disabled={busy}><ShieldCheck size={18} />{busy ? 'Đang đăng nhập…' : 'Vào Teacher Dashboard'}</button>
+        <p className="auth-switch">
+          <button type="button" className="link-button" onClick={() => setForgot('teacher')}>Quên mật khẩu?</button>
+        </p>
       </form>}
     </div>
+
+    {forgot && <ForgotPassword mode={forgot} onClose={() => setForgot(null)} />}
   </div>
 }
