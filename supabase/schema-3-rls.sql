@@ -435,6 +435,99 @@ grant execute on function public.import_class_roster(uuid, jsonb, text, text) to
 revoke all on function public.norm_mshs(text), public.norm_name(text) from public, anon;
 grant execute on function public.norm_mshs(text), public.norm_name(text) to authenticated;
 
+-- Xem trước kết quả import mà KHÔNG ghi gì.
+-- Dùng chung đúng bộ luật với import_class_roster: nếu bản xem trước tự đoán
+-- theo cách khác, giáo viên sẽ thấy một đằng và hệ thống làm một nẻo.
+-- Cần security definer vì giáo viên không được đọc bảng students toàn trường —
+-- ở đây chỉ trả về KẾT LUẬN cho đúng những MSHS thầy cô đã có trong file.
+drop function if exists public.preview_class_roster(uuid, jsonb);
+create or replace function public.preview_class_roster(p_class uuid, p_rows jsonb)
+returns table (row_no int, mshs text, full_name text, outcome text, note text)
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_year uuid; v_current uuid; r jsonb;
+  v_mshs text; v_name text; v_db_name text; v_other text; v_here boolean;
+  seen text[] := '{}';
+begin
+  if not public.teaches_class(p_class) then
+    raise exception 'Thầy/cô không có quyền quản lý lớp này';
+  end if;
+  select school_year_id into v_year from public.classes where id = p_class;
+  select id into v_current from public.school_years where is_active;
+  if v_year is distinct from v_current then
+    raise exception 'Chỉ import được vào lớp của năm học hiện tại';
+  end if;
+
+  for r in select * from jsonb_array_elements(p_rows) loop
+    row_no    := nullif(r->>'stt','')::int;
+    mshs      := public.norm_mshs(r->>'mshs');
+    full_name := public.norm_name(r->>'full_name');
+    outcome   := null; note := null;
+
+    if mshs is null and full_name is null then
+      continue;                                  -- dòng trống của file mẫu
+    elsif mshs is null then
+      outcome := 'error'; note := 'Thiếu MSHS';
+    elsif mshs !~ '^[0-9]{4,12}$' then
+      outcome := 'error'; note := 'MSHS không hợp lệ';
+    elsif full_name is null or char_length(full_name) < 3 then
+      outcome := 'error'; note := 'Thiếu họ tên hoặc họ tên quá ngắn';
+    elsif mshs = any(seen) then
+      outcome := 'error'; note := 'MSHS trùng trong file';
+    else
+      seen := seen || mshs;
+      select s.full_name into v_db_name from public.students s where s.mshs = preview_class_roster.mshs;
+
+      if v_db_name is null then
+        outcome := 'inserted'; note := 'Học sinh mới';
+      elsif public.norm_name(v_db_name) is distinct from full_name then
+        outcome := 'name_mismatch'; note := 'Trong hệ thống: ' || v_db_name;
+      else
+        select true into v_here from public.enrollments e
+         where e.mshs = preview_class_roster.mshs and e.class_id = p_class and e.is_active;
+        if coalesce(v_here, false) then
+          outcome := 'already'; note := 'Đã có trong lớp';
+        else
+          select c.name into v_other
+            from public.enrollments e join public.classes c on c.id = e.class_id
+           where e.mshs = preview_class_roster.mshs and e.is_active
+             and e.school_year_id = v_year and e.class_id <> p_class
+           limit 1;
+          if v_other is not null then
+            outcome := 'conflict'; note := 'Đang thuộc lớp ' || v_other;
+          else
+            outcome := 'linked'; note := 'Đã có trên hệ thống — thêm vào lớp';
+          end if;
+        end if;
+      end if;
+    end if;
+    return next;
+  end loop;
+end;
+$$;
+
+revoke all on function public.preview_class_roster(uuid, jsonb) from public, anon;
+grant execute on function public.preview_class_roster(uuid, jsonb) to authenticated;
+
+-- Danh sách lớp cho trang roster: gộp sẵn tình trạng tài khoản và hoạt động.
+drop function if exists public.class_roster(uuid);
+create or replace function public.class_roster(p_class uuid)
+returns table (mshs text, full_name text, user_id uuid, avatar_path text,
+               must_change_password boolean, so_nhiem_vu bigint, hoat_dong_gan_nhat date)
+language sql stable security definer set search_path = public as $$
+  select s.mshs, s.full_name, s.claimed_user_id, p.avatar_path, p.must_change_password,
+         (select count(*) from public.plans pl where pl.student_id = s.claimed_user_id and pl.class_id = p_class),
+         (select max(pl.study_date) from public.plans pl where pl.student_id = s.claimed_user_id and pl.class_id = p_class)
+  from public.enrollments e
+  join public.students s on s.mshs = e.mshs
+  left join public.profiles p on p.id = s.claimed_user_id
+  where e.class_id = p_class and e.is_active and public.teaches_class(p_class)
+  order by s.full_name;
+$$;
+
+revoke all on function public.class_roster(uuid) from public, anon;
+grant execute on function public.class_roster(uuid) to authenticated;
+
 -- Chuyển học sinh khỏi lớp. KHÔNG xóa học sinh khỏi hệ thống, chỉ ngừng ghi
 -- danh — lịch sử nhiệm vụ và tài khoản của em giữ nguyên.
 create or replace function public.remove_from_class(p_class uuid, p_mshs text)

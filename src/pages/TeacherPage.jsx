@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Check, ClipboardCheck, ClipboardCopy, Download, ExternalLink, KeyRound, LifeBuoy, MessageSquare, MessageSquareQuote, RefreshCw, Search, Shuffle, UsersRound, X } from 'lucide-react'
 import { supabase, callFunction } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -9,6 +9,8 @@ import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
 import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
 import { ClassScheduleSettings, MissingRegistrations } from '../components/ClassSchedule'
 import Avatar from '../components/Avatar'
+import RosterPanel from '../components/RosterPanel'
+import ClassSwitcher from '../components/ClassSwitcher'
 import { ClassAnalytics, StudentAnalytics } from '../components/Analytics'
 
 const PAGE_SIZE = 25
@@ -20,7 +22,7 @@ const tomorrowISO = () => {
 }
 
 export default function TeacherPage(){
-  const {context}=useAuth()
+  const {context,classes}=useAuth()
   const [students,setStudents]=useState([])
   const [roster,setRoster]=useState([])
   const [plans,setPlans]=useState([])
@@ -243,6 +245,7 @@ export default function TeacherPage(){
         <p>Theo dõi kế hoạch, kết quả và nhu cầu hỗ trợ của {rosterTotal} học sinh{context.yearName?` · năm học ${context.yearName}`:''}.</p>
       </div>
       <div className="button-row">
+        <ClassSwitcher/>
         <button className="button ghost" onClick={load}><RefreshCw size={17}/> Làm mới</button>
         <button className="button primary" onClick={view==='plans'?exportCsv:exportSummaryCsv}><Download size={17}/> Xuất CSV</button>
       </div>
@@ -304,6 +307,7 @@ export default function TeacherPage(){
       <button type="button" className={view==='plans'?'active':''} onClick={()=>setView('plans')}>Theo kế hoạch</button>
       <button type="button" className={view==='students'?'active':''} onClick={()=>setView('students')}>Theo học sinh</button>
       <button type="button" className={view==='analytics'?'active':''} onClick={()=>setView('analytics')}>Phân tích</button>
+      <button type="button" className={view==='roster'?'active':''} onClick={()=>setView('roster')}>Học sinh</button>
       <button type="button" className={view==='missing'?'active':''} onClick={()=>setView('missing')}>HS chưa đăng ký</button>
       <button type="button" className={view==='schedule'?'active':''} onClick={()=>setView('schedule')}>Lịch tự học</button>
       <button type="button" className={view==='assistants'?'active':''} onClick={()=>setView('assistants')}>Trợ giảng</button>
@@ -311,6 +315,7 @@ export default function TeacherPage(){
 
     {view==='schedule'&&<ClassScheduleSettings classId={context.classId} className={context.className}/>}
     {view==='missing'&&<MissingRegistrations classId={context.classId}/>}
+    {view==='roster'&&<RosterPanel classId={context.classId} className={context.className} yearName={context.yearName}/>}
     {view==='analytics'&&<ClassAnalytics classId={context.classId} className={context.className}/>}
 
     {view==='assistants'&&<AssistantsPanel
