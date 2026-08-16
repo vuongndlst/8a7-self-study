@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Check, ClipboardCheck, ClipboardCopy, Download, ExternalLink, KeyRound, LifeBuoy, MessageSquare, MessageSquareQuote, RefreshCw, Search, Shuffle, UsersRound, X } from 'lucide-react'
 import { supabase, callFunction } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -445,7 +445,7 @@ export default function TeacherPage(){
             <td className="pick" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedPlans.has(p.id)} onChange={()=>togglePlan(p.id)}/></td>
             <td><span className="cell-with-avatar"><Avatar name={s.full_name} path={s.avatar_path} size={30}/>
               <span><strong>{s.full_name}</strong><small>{s.mshs}</small></span></span></td>
-            <td>{formatDate(p.study_date)}<small>Tiết {p.period}</small></td>
+            <td>{formatDate(p.study_date)}<small>Tiết {p.period}{p.span===2?`–${p.period+1} (2 tiết)`:''}</small></td>
             <td><button className="link-button task-link" onClick={()=>setTaskTarget({plan:p,student:s})}>{p.subject}</button><small title={p.task}>{p.task}</small></td>
             <td>
               <StatusBadge value={p.review_status}/>
@@ -811,7 +811,7 @@ function StudentDetailModal({row,plans,reflections,evidence,onClose,onOpenTask,o
       <tbody>{mine.map(p=>{
         const r=reflections[p.id]
         return <tr key={p.id} className={`clickable ${ratingTone(r?.rating)}`} onClick={()=>onOpenTask(p)}>
-          <td>{formatDate(p.study_date)}<small>Tiết {p.period}</small></td>
+          <td>{formatDate(p.study_date)}<small>Tiết {p.period}{p.span===2?`–${p.period+1} (2 tiết)`:''}</small></td>
           <td>{p.subject}</td>
           <td><small title={p.task}>{p.task}</small></td>
           <td>{r?<StatusBadge value={r.completion_status}/>:<span className="muted-text">Chưa cập nhật</span>}</td>

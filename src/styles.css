@@ -381,3 +381,8 @@ tr.thin-sample{opacity:.62}
 .chip-btn.alert.on b{opacity:.9}
 
 td .pill-todo{font-size:10.5px}
+
+/* ---------- Nhiem vu keo dai 2 tiet ---------- */
+.span-chip{display:inline-block;margin-left:7px;background:#dceae2;color:var(--green);font-size:10.5px;
+  font-weight:800;padding:2px 7px;border-radius:999px;vertical-align:middle;letter-spacing:.2px}
+.toggle-row.span-row{margin:0 0 10px;padding:9px 11px;background:#f3f7f4;border-radius:10px}

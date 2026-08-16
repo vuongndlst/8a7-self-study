@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CalendarDays, Check, ClipboardList, Laptop, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, CalendarDays, Check, ClipboardList, Laptop, Layers, Lock, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { todayISO } from '../utils/date'
@@ -16,7 +16,15 @@ const emptyTask = () => ({
   subject: 'Toán', subject_other: '', activity_type: 'Bài tập cá nhân',
   task: '', goal: '', priority: 'Trung bình',
   use_device: false, device_purpose: '',
+  span: 1,                        // 1 tiết, hoặc 2 khi tiết sau cũng là giờ tự học
 })
+
+// Ngày mai theo giờ Việt Nam — mốc sớm nhất khi lớp đã khóa đăng ký trễ.
+const tomorrowISO = () => {
+  const d = new Date(todayISO() + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
 
 const fmtDate = (iso) => {
   if (!iso) return ''
@@ -35,12 +43,19 @@ export default function SessionRegister({ onDone, onCancel }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
+  const [allowLate, setAllowLate] = useState(true)
 
   useEffect(() => {
     if (!context.classId) return
     supabase.from('class_schedule').select('weekday,period').eq('class_id', context.classId)
       .then(({ data }) => setSchedule(data ?? []))
+    supabase.from('classes').select('allow_late_registration').eq('id', context.classId).maybeSingle()
+      .then(({ data }) => setAllowLate(data?.allow_late_registration ?? true))
   }, [context.classId])
+
+  // Lớp đã khóa đăng ký trễ thì hôm nay không chọn được nữa — hạn là 24:00 đêm qua.
+  const minDate = allowLate ? todayISO() : tomorrowISO()
+  useEffect(() => { if (date && date < minDate) setDate('') }, [minDate])
 
   // Tiết được phép của ngày đang chọn. Lớp chưa khai lịch thì mở cả 9 tiết.
   const allowedPeriods = useMemo(() => {
@@ -64,12 +79,13 @@ export default function SessionRegister({ onDone, onCancel }) {
 
   useEffect(() => { if (period && !allowedPeriods.includes(period)) setPeriod(null) }, [allowedPeriods])
 
-  // Đăng ký sát giờ thì nhắc, nhưng không chặn.
-  const leadHours = useMemo(() => {
-    if (!date) return null
-    return (new Date(date + 'T00:00:00+07:00').getTime() - Date.now()) / 3600000
-  }, [date])
-  const isLate = leadHours != null && leadHours < 24
+  // Tiết liền sau cũng là giờ tự học → mới cho phép một nhiệm vụ kéo dài 2 tiết.
+  const canSpan = period != null && period < 9 && allowedPeriods.includes(period + 1)
+  useEffect(() => { if (!canSpan) setTasks((prev) => prev.map((t) => (t.span === 2 ? { ...t, span: 1 } : t))) }, [canSpan])
+
+  // Hạn là 24:00 đêm hôm trước, nên "trễ" đúng bằng "đăng ký cho chính hôm nay".
+  // Giống hệt cách registrationStatus() chấm, để nhắc trước khớp với nhãn sau này.
+  const isLate = date === todayISO()
 
   const setTask = (key, patch) => setTasks((prev) => prev.map((t) => (t.key === key ? { ...t, ...patch } : t)))
   const addTask = () => setTasks((prev) => [...prev, emptyTask()])
@@ -126,6 +142,7 @@ export default function SessionRegister({ onDone, onCancel }) {
       subject: t.subject,
       subject_other: t.subject === 'Khác' ? t.subject_other.trim() : null,
       task: t.task.trim(), goal: t.goal.trim(), priority: t.priority,
+      span: canSpan ? t.span : 1,
       use_device: t.use_device,
       device_purpose: t.use_device ? t.device_purpose.trim() : null,
       device_status: t.use_device ? 'Chờ duyệt' : 'Không dùng',
@@ -147,10 +164,15 @@ export default function SessionRegister({ onDone, onCancel }) {
       <span className="reg-num">1</span>
       <div>
         <label>Ngày tự học</label>
-        <input type="date" value={date} min={todayISO()} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" value={date} min={minDate} onChange={(e) => setDate(e.target.value)} />
         {date && <p className="muted-text small">{fmtDate(date)}</p>}
-        {isLate && <div className="notice warning compact"><AlertTriangle size={16} /><span>
-          Em đang đăng ký khá sát giờ tự học. Lần sau hãy cố gắng lên kế hoạch sớm hơn để chủ động hơn nhé.
+        {!allowLate && <div className="notice compact"><Lock size={16} /><span>
+          Lớp mình <strong>khóa đăng ký lúc 24:00 đêm hôm trước</strong>, nên em chỉ chọn được từ
+          <strong> ngày mai</strong> trở đi. Hôm nay đã hết hạn rồi.
+        </span></div>}
+        {allowLate && isLate && <div className="notice warning compact"><AlertTriangle size={16} /><span>
+          Em đang đăng ký sau hạn 24:00 đêm qua. Buổi này vẫn được nhận nhưng sẽ bị đánh dấu
+          <strong> Trễ</strong>. Lần sau em đăng ký trước nhé.
         </span></div>}
       </div>
     </div>
@@ -175,6 +197,10 @@ export default function SessionRegister({ onDone, onCancel }) {
                   })}
                 </div>
                 {hasSchedule && <p className="muted-text small">Chỉ hiện những tiết lớp mình được phân giờ tự học.</p>}
+                {canSpan && <div className="notice compact"><Layers size={16} /><span>
+                  Tiết {period} và tiết {period + 1} là <strong>hai tiết liền nhau</strong>. Nếu có nhiệm vụ lớn,
+                  em tick ô <em>“Làm suốt 2 tiết”</em> ở khối nhiệm vụ bên dưới.
+                </span></div>}
                 {existing && <div className="notice compact"><ClipboardList size={16} /><span>
                   Em đã có buổi tự học ngày này tiết {period}. Nhiệm vụ mới sẽ được <strong>thêm vào buổi đó</strong>.
                 </span></div>}
@@ -191,10 +217,17 @@ export default function SessionRegister({ onDone, onCancel }) {
 
         {tasks.map((t, i) => <div key={t.key} className="task-block">
           <div className="task-block-head">
-            <strong>Nhiệm vụ {i + 1}</strong>
+            <strong>Nhiệm vụ {i + 1}{t.span === 2 ? ` · tiết ${period}–${period + 1}` : ''}</strong>
             {tasks.length > 1 && <button type="button" className="icon-button danger" title="Bỏ nhiệm vụ này"
               onClick={() => removeTask(t.key)}><Trash2 size={15} /></button>}
           </div>
+
+          {canSpan && <div className="toggle-row compact span-row">
+            <label className="switch"><input type="checkbox" checked={t.span === 2}
+              onChange={(e) => setTask(t.key, { span: e.target.checked ? 2 : 1 })} /><span /></label>
+            <div><strong><Layers size={15} /> Làm suốt 2 tiết (tiết {period} và {period + 1})</strong>
+              <small>Dùng cho nhiệm vụ lớn không làm xong trong một tiết. Em chỉ ghi và cập nhật kết quả một lần.</small></div>
+          </div>}
 
           <div className="form-grid two">
             <div>
@@ -273,6 +306,7 @@ export default function SessionRegister({ onDone, onCancel }) {
           <strong>{tasks.length} nhiệm vụ</strong>
           <ol className="summary-tasks">{tasks.map((t) => <li key={t.key}>
             <strong>{t.subject === 'Khác' ? t.subject_other : t.subject}</strong> — {t.task}
+            {canSpan && t.span === 2 && <em> · ⏱ suốt tiết {period}–{period + 1}</em>}
             {t.use_device && <em> · 💻 {t.device_purpose}</em>}
           </li>)}</ol>
         </div>

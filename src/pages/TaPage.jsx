@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { LifeBuoy, MessageSquare, RefreshCw, Search, ShieldCheck, UserX } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -226,7 +226,7 @@ export default function TaPage() {
             return <tr key={p.id}>
               <td><span className="cell-with-avatar"><Avatar name={s.full_name} path={s.avatar_path} size={30} />
                 <span><strong>{s.full_name ?? '—'}</strong><small>{s.mshs ?? ''}</small></span></span></td>
-              <td>{formatDate(p.study_date)}<small>Tiết {p.period}</small></td>
+              <td>{formatDate(p.study_date)}<small>Tiết {p.period}{p.span===2?`–${p.period+1}`:''}</small></td>
               <td><strong>{p.subject === 'Khác' && p.subject_other ? p.subject_other : p.subject}</strong><small title={p.task}>{p.task}</small></td>
               <td><StatusBadge value={registrationStatus(p.study_date, p.created_at)} /></td>
               <td>{p.use_device ? <span title={p.device_purpose}>💻 <StatusBadge value={p.device_status} /></span> : '—'}</td>

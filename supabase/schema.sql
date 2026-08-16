@@ -40,6 +40,11 @@ create table if not exists public.classes (
   unique (school_year_id, name)
 );
 
+-- Cho phép đăng ký trong chính ngày tự học hay không. Hạn khóa là 24:00 đêm hôm
+-- trước, nên "trễ" ở đây nghĩa là đăng ký khi ngày tự học đã bắt đầu.
+-- Mặc định BẬT: siết chặt là quyết định của giáo viên, không phải mặc định của hệ thống.
+alter table public.classes add column if not exists allow_late_registration boolean not null default true;
+
 -- ---------- Người dùng ----------
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -146,6 +151,19 @@ create table if not exists public.reflections (
 );
 
 alter table public.class_assistants add column if not exists can_approve_plan boolean not null default false;
+
+-- Nhiệm vụ kéo dài 2 TIẾT LIỀN NHAU. Lưu bằng độ dài chứ không phải tiết kết thúc:
+-- period vẫn là tiết bắt đầu nên mọi truy vấn cũ theo period vẫn đúng nguyên vẹn,
+-- và không thể sinh ra khoảng thời gian ngược (end < start).
+alter table public.plans add column if not exists span smallint not null default 1;
+
+do $$ begin
+  alter table public.plans drop constraint if exists plans_span_check;
+  alter table public.plans add constraint plans_span_check check (span between 1 and 2);
+  -- Kéo dài 2 tiết thì tiết bắt đầu nhiều nhất là tiết 8.
+  alter table public.plans drop constraint if exists plans_span_fits;
+  alter table public.plans add constraint plans_span_fits check (period + span - 1 <= 9);
+end $$;
 
 -- v5: DUYỆT KẾ HOẠCH — tách hẳn khỏi tiến độ cập nhật kết quả.
 -- Một kế hoạch có hai chiều độc lập: "đã duyệt chưa" và "đã cập nhật kết quả chưa".
@@ -499,6 +517,19 @@ returns boolean language sql stable security definer set search_path = public as
   );
 $$;
 
+-- Học sinh còn được đăng ký cho ngày này không?
+-- Hạn khóa là 24:00 đêm hôm trước, nên đăng ký cho NGÀY MAI trở đi luôn hợp lệ;
+-- đăng ký cho CHÍNH NGÀY HÔM NAY là "trễ" và chỉ được phép khi lớp còn mở.
+-- security definer vì học sinh không cần đọc được cột cấu hình của lớp.
+create or replace function public.can_register_on(p_class uuid, p_date date)
+returns boolean language sql stable security definer set search_path = public as $$
+  select case
+    when p_date > public.vn_today() then true
+    when p_date < public.vn_today() then false
+    else coalesce((select allow_late_registration from public.classes where id = p_class), true)
+  end;
+$$;
+
 -- p_user có phải giáo viên / trợ giảng của LỚP MÌNH không?
 -- Cần cho chat: nếu không, học sinh không đọc được tên người đang nhắn với mình.
 create or replace function public.shares_class_staff(p_user uuid)
@@ -538,12 +569,12 @@ revoke all on function public.is_teacher(), public.teaches_class(uuid), public.t
                       public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid),
                       public.staff_perm(uuid, text), public.staff_sees_student(uuid, text),
                       public.shares_class_staff(uuid), public.is_assistant(),
-                      public.staff_sees_student_name(uuid) from public;
+                      public.staff_sees_student_name(uuid), public.can_register_on(uuid, date) from public;
 grant execute on function public.is_teacher(), public.teaches_class(uuid), public.teaches_user(uuid),
                           public.teaches_mshs(text), public.my_mshs(), public.student_active_class(uuid),
                           public.staff_perm(uuid, text), public.staff_sees_student(uuid, text),
                           public.shares_class_staff(uuid), public.is_assistant(),
-                          public.staff_sees_student_name(uuid) to authenticated;
+                          public.staff_sees_student_name(uuid), public.can_register_on(uuid, date) to authenticated;
 
 -- Khi TẠO kế hoạch: lớp do server gán, và trạng thái duyệt thiết bị luôn bắt đầu
 -- ở 'Chờ duyệt' — học sinh không thể tự khai là đã được duyệt.
@@ -573,6 +604,19 @@ begin
     on conflict (student_id, study_date, period) do update set updated_at = now()
     returning id into new.session_id;
     new.class_id := c;
+  end if;
+
+  -- Kéo dài 2 tiết chỉ hợp lệ khi tiết liền sau CŨNG là giờ tự học của lớp.
+  -- Lớp chưa khai lịch thì không có gì để đối chiếu, cho qua.
+  if new.span = 2 and exists (select 1 from public.class_schedule where class_id = new.class_id) then
+    if not exists (
+      select 1 from public.class_schedule cs
+      where cs.class_id = new.class_id
+        and cs.weekday  = extract(isodow from new.study_date)::smallint
+        and cs.period   = new.period + 1
+    ) then
+      raise exception 'Tiết % không phải giờ tự học của lớp nên nhiệm vụ không thể kéo dài sang tiết đó.', new.period + 1;
+    end if;
   end if;
 
   -- auth.uid() null nghĩa là service role (script quản trị / seed) — giữ nguyên giá trị.
@@ -625,6 +669,24 @@ begin
   end if;
 
   if auth.uid() = old.student_id then
+    -- Ngày và tiết thuộc về BUỔI tự học, không thuộc về nhiệm vụ. Cho sửa ở đây
+    -- thì nhiệm vụ sẽ lệch khỏi buổi chứa nó. Muốn đổi khung giờ thì xóa và
+    -- đăng ký lại buổi khác.
+    new.study_date := old.study_date;
+    new.period     := old.period;
+
+    -- Bật kéo dài 2 tiết khi sửa: tiết liền sau vẫn phải là giờ tự học của lớp.
+    if new.span = 2 and old.span <> 2
+       and exists (select 1 from public.class_schedule where class_id = old.class_id)
+       and not exists (
+         select 1 from public.class_schedule cs
+         where cs.class_id = old.class_id
+           and cs.weekday  = extract(isodow from old.study_date)::smallint
+           and cs.period   = old.period + 1
+       ) then
+      raise exception 'Tiết % không phải giờ tự học của lớp nên nhiệm vụ không thể kéo dài sang tiết đó.', old.period + 1;
+    end if;
+
     -- Học sinh: không đụng vào kết quả duyệt thiết bị.
     new.device_status      := old.device_status;
     new.device_reviewed_by := old.device_reviewed_by;
@@ -663,6 +725,7 @@ begin
     new.student_id        := old.student_id;
     new.class_id          := old.class_id;
     new.study_date        := old.study_date;
+    new.span              := old.span;
     new.period            := old.period;
     new.activity_type     := old.activity_type;
     new.subject           := old.subject;
@@ -725,6 +788,26 @@ begin
   return new;
 end;
 $$;
+
+-- Giáo viên chỉ được đổi ĐÚNG cấu hình đăng ký của lớp. RLS chặn được dòng nhưng
+-- không chặn được cột, nên phải khóa từng cột ở đây.
+create or replace function public.classes_guard_columns()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then
+    return new;
+  end if;
+  new.id             := old.id;
+  new.school_year_id := old.school_year_id;
+  new.name           := old.name;
+  new.created_at     := old.created_at;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_classes_guard_columns on public.classes;
+create trigger trg_classes_guard_columns before update on public.classes
+for each row execute function public.classes_guard_columns();
 
 drop trigger if exists trg_plans_guard_columns on public.plans;
 create trigger trg_plans_guard_columns before update on public.plans
@@ -1200,8 +1283,11 @@ language sql stable security definer set search_path = public as $$
   cross join slots sl
   where exists (select 1 from allowed)
     and not exists (
+      -- Nhiệm vụ kéo dài 2 tiết che luôn tiết sau, nên xét theo khoảng
+      -- [period, period + span - 1] chứ không so bằng với period.
       select 1 from public.plans p
-      where p.student_id = r.sid and p.study_date = p_date and p.period = sl.period
+      where p.student_id = r.sid and p.study_date = p_date
+        and sl.period between p.period and p.period + p.span - 1
     )
   union all
   -- Lớp CHƯA khai lịch bao giờ → chỉ xét "có kế hoạch nào trong ngày không"
@@ -1480,6 +1566,13 @@ for select to authenticated using (true);
 create policy classes_read on public.classes
 for select to authenticated using (true);
 
+-- Giáo viên chủ nhiệm đổi được cấu hình LỚP MÌNH. Trigger bên dưới khóa mọi cột
+-- khác lại, nên quyền này không thể dùng để đổi tên lớp hay chuyển lớp sang năm khác.
+drop policy if exists classes_teacher_update on public.classes;
+create policy classes_teacher_update on public.classes
+for update to authenticated
+using (public.teaches_class(id)) with check (public.teaches_class(id));
+
 create policy class_teachers_read on public.class_teachers
 for select to authenticated using (teacher_id = auth.uid());
 
@@ -1543,8 +1636,10 @@ create policy sessions_student_insert on public.self_study_sessions
 for insert to authenticated
 with check (
   student_id = auth.uid()
-  and study_date >= public.vn_today()
   and class_id = public.student_active_class(auth.uid())
+  -- Hạn khóa 24:00 đêm hôm trước. Chặn ở RLS chứ không chỉ ở giao diện, nếu không
+  -- một lệnh gọi API thẳng là qua mặt được cả quy định của lớp.
+  and public.can_register_on(class_id, study_date)
 );
 
 -- Xóa buổi khi buổi đó không còn nhiệm vụ nào (dọn rác), chỉ với buổi tương lai.
@@ -1563,7 +1658,7 @@ create policy plans_student_insert on public.plans
 for insert to authenticated
 with check (
   student_id = auth.uid()
-  and study_date >= public.vn_today()
+  and public.can_register_on(class_id, study_date)
   and exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'student')
 );
 
@@ -1816,6 +1911,10 @@ grant select on public.school_years, public.classes, public.class_teachers, publ
 grant insert, update, delete on public.class_schedule to authenticated;   -- RLS: chỉ giáo viên lớp
 grant insert, delete on public.self_study_sessions to authenticated;      -- RLS: chỉ buổi của mình
 grant update (avatar_path) on public.profiles to authenticated;           -- chỉ đúng cột ảnh đại diện
+-- Cấu hình đăng ký của lớp: grant đúng một cột, RLS giới hạn về lớp mình phụ trách,
+-- trigger khóa nốt phần còn lại. Ba lớp cho một ô tick, nhưng ô tick này quyết định
+-- học sinh còn đăng ký được hay không nên đáng.
+grant update (allow_late_registration) on public.classes to authenticated;
 
 -- profiles / students / enrollments / classes chỉ được ghi bởi Edge Function và script
 -- quản trị (chạy bằng service role, bỏ qua cả hai lớp).

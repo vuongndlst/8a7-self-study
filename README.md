@@ -247,7 +247,24 @@ Hai việc khác nhau nên nằm ở **hai tab riêng**:
 - **Lịch tự học** — khai một lần đầu năm, gần như không đụng lại.
 - **HS chưa đăng ký** — mở gần như mỗi ngày.
 
-### Tab *Lịch tự học*
+### Tab *Lịch tự học* — hạn đăng ký
+
+Hạn khóa cố định là **24:00 đêm hôm trước**, đúng bằng cách `registrationStatus()` chấm
+"Đúng hạn / Trễ" từ trước tới nay. Ô tick `classes.allow_late_registration` quyết định
+điều gì xảy ra sau mốc đó:
+
+| Ô tick | Đăng ký cho hôm nay | Đăng ký cho ngày mai |
+|---|---|---|
+| **Bật** (mặc định) | Được, nhưng đánh dấu *Trễ* | Được |
+| **Tắt** | Bị chặn | Được |
+
+Chặn ở **RLS** (`can_register_on(class, date)` trên cả `self_study_sessions` và `plans`),
+không chỉ ở giao diện — gọi thẳng API cũng không lách được. Ô tick này đi qua ba lớp:
+`grant update (allow_late_registration)` cấp đúng một cột, RLS `classes_teacher_update`
+giới hạn về lớp mình phụ trách, và trigger `classes_guard_columns` khóa nốt phần còn lại
+(tên lớp, năm học). Học sinh gọi update thì sửa được **0 dòng**.
+
+### Tab *Lịch tự học* — khung giờ
 
 Lớp thường được phân giờ tự học **cố định theo tuần**. Khai bằng lưới tick 7 thứ × 9 tiết
 (bảng `class_schedule`). Khai xong thì hai chỗ hưởng lợi: học sinh **chỉ chọn được đúng
@@ -282,6 +299,23 @@ chứ không còn ở `plans`.
 
 Sau giờ tự học, mỗi nhiệm vụ chưa có kết quả hiện một **nút lớn "Cập nhật kết quả"** ngay
 dưới dòng nhiệm vụ — trước đây phải đoán rằng bấm vào dòng sẽ mở popup.
+
+### Nhiệm vụ kéo dài 2 tiết
+
+Lớp hay được xếp **hai tiết tự học liền nhau**. Nhiệm vụ lớn thì đăng ký **một lần cho cả
+hai tiết**: `plans.span` = 1 hoặc 2.
+
+Lưu bằng **độ dài** chứ không phải tiết kết thúc — `period` vẫn là tiết bắt đầu nên mọi
+truy vấn cũ theo `period` còn đúng nguyên vẹn, và không thể sinh ra khoảng ngược
+(`end < start`). Ràng buộc `period + span - 1 <= 9`.
+
+Ô tick chỉ hiện khi **tiết liền sau cũng là giờ tự học của lớp**, và điều kiện đó được
+kiểm lại trong trigger `plans_set_class` (INSERT) lẫn `plans_guard_columns` (UPDATE) —
+không phải chỉ ở giao diện. `missing_registrations` xét theo khoảng
+`[period, period + span - 1]` nên tiết thứ hai không bị báo thiếu oan.
+
+Ngày và tiết **không sửa được lẻ ở popup chỉnh sửa** nữa: chúng thuộc về *buổi*, sửa lẻ
+thì nhiệm vụ lệch khỏi buổi chứa nó. Muốn đổi khung giờ thì xóa và đăng ký lại.
 
 Minh chứng có **bốn dạng** (`evidence.kind`), tối đa 3 mục mỗi nhiệm vụ:
 

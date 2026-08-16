@@ -288,7 +288,8 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
       return <li key={t.id} className={taskTodo?'task-todo':''}>
         <button type="button" className={`task-row ${ratingTone(r?.rating)} ${taskTodo?'todo':''}`} onClick={()=>onOpen(t)}>
           <span className="task-row-main">
-            <strong>{t.subject==='Khác'&&t.subject_other?t.subject_other:t.subject}</strong>
+            <strong>{t.subject==='Khác'&&t.subject_other?t.subject_other:t.subject}
+              {t.span===2&&<span className="span-chip">tiết {t.period}–{t.period+1}</span>}</strong>
             <small>{t.task}</small>
           </span>
           <span className="task-row-side">
@@ -323,17 +324,17 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
 }
 
 function EditPlanModal({plan,onClose,onSaved}){
-  const [form,setForm]=useState({study_date:plan.study_date,period:String(plan.period),activity_type:plan.activity_type,subject:plan.subject,task:plan.task,priority:plan.priority,goal:plan.goal,use_device:plan.use_device,device_purpose:plan.device_purpose||'',fallback_activity:plan.fallback_activity||'Làm nhiệm vụ tiếp theo'})
+  const [form,setForm]=useState({activity_type:plan.activity_type,subject:plan.subject,task:plan.task,priority:plan.priority,goal:plan.goal,span:plan.span??1,use_device:plan.use_device,device_purpose:plan.device_purpose||'',fallback_activity:plan.fallback_activity||'Làm nhiệm vụ tiếp theo'})
   const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('')
   const update=(k,v)=>setForm({...form,[k]:v})
   const save=async()=>{
     setMsg('')
     if(form.use_device&&!form.device_purpose.trim())return setMsg('Hãy ghi rõ mục đích sử dụng thiết bị.')
     setBusy(true)
-    const payload={...form,period:Number(form.period),device_purpose:form.use_device?form.device_purpose.trim():null}
+    const payload={...form,device_purpose:form.use_device?form.device_purpose.trim():null}
     const {error}=await supabase.from('plans').update(payload).eq('id',plan.id)
     setBusy(false)
-    if(error){if(error.code==='23505')return setMsg('Em đã có kế hoạch ở ngày và tiết này.');return setMsg('Không thể lưu điều chỉnh.')}
+    if(error)return setMsg('Không thể lưu điều chỉnh. '+(error.message||''))
     onSaved()
   }
   const remove=async()=>{
@@ -346,7 +347,16 @@ function EditPlanModal({plan,onClose,onSaved}){
   }
   return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal" onMouseDown={e=>e.stopPropagation()}>
     <div className="modal-head"><div><span className="eyebrow">CHỈNH SỬA KẾ HOẠCH</span><h2>{plan.subject}</h2></div><button className="icon-button" onClick={onClose}>✕</button></div>
-    <div className="form-grid two"><div><label>Ngày tự học</label><input type="date" min={todayISO()} value={form.study_date} onChange={e=>update('study_date',e.target.value)}/></div><div><label>Tiết</label><select value={form.period} onChange={e=>update('period',e.target.value)}>{Array.from({length:9},(_,i)=>i+1).map(n=><option key={n} value={n}>Tiết {n}</option>)}</select></div></div>
+    {/* Ngày và tiết thuộc về BUỔI tự học, không sửa lẻ ở đây được — sửa thì nhiệm
+        vụ sẽ lệch khỏi buổi chứa nó. Muốn đổi khung giờ thì xóa và đăng ký lại. */}
+    <div className="detail-box">
+      <strong>Khung giờ</strong>
+      <p>{formatDate(plan.study_date)} · Tiết {plan.period}{plan.span===2?`–${plan.period+1} (làm suốt 2 tiết)`:''}</p>
+      <small className="muted-text">Muốn đổi sang ngày hoặc tiết khác thì xóa nhiệm vụ này rồi đăng ký lại buổi mới.</small>
+    </div>
+    {plan.span===2&&<div className="toggle-row"><label className="switch">
+      <input type="checkbox" checked={form.span===2} onChange={e=>update('span',e.target.checked?2:1)}/><span/></label>
+      <div><strong>Làm suốt 2 tiết</strong><small>Bỏ tick nếu em thấy nhiệm vụ này chỉ cần một tiết.</small></div></div>}
     <div className="form-grid two"><div><label>Loại hoạt động</label><select value={form.activity_type} onChange={e=>update('activity_type',e.target.value)}>{activityOptions.map(x=><option key={x}>{x}</option>)}</select></div><div><label>Môn / nội dung</label><select value={form.subject} onChange={e=>update('subject',e.target.value)}>{subjectOptions.map(x=><option key={x}>{x}</option>)}</select></div></div>
     <label>Nhiệm vụ cụ thể</label><textarea rows="3" maxLength={1000} value={form.task} onChange={e=>update('task',e.target.value)}/>
     <label>Mục tiêu cuối tiết</label><textarea rows="2" maxLength={1000} value={form.goal} onChange={e=>update('goal',e.target.value)}/>

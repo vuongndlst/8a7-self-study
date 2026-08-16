@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CalendarClock, UserX } from 'lucide-react'
+import { CalendarClock, Clock, Lock, UserX } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { todayISO } from '../utils/date'
 
@@ -22,12 +22,29 @@ export function ClassScheduleSettings({ classId, className }) {
   const [slots, setSlots] = useState(new Set())
   const [saving, setSaving] = useState('')
   const [msg, setMsg] = useState('')
+  const [allowLate, setAllowLate] = useState(true)
+  const [savingLate, setSavingLate] = useState(false)
 
   const loadSlots = async () => {
-    const { data } = await supabase.from('class_schedule').select('weekday,period').eq('class_id', classId)
+    const [{ data }, { data: c }] = await Promise.all([
+      supabase.from('class_schedule').select('weekday,period').eq('class_id', classId),
+      supabase.from('classes').select('allow_late_registration').eq('id', classId).maybeSingle(),
+    ])
     setSlots(new Set((data ?? []).map((r) => key(r.weekday, r.period))))
+    setAllowLate(c?.allow_late_registration ?? true)
   }
   useEffect(() => { if (classId) loadSlots() }, [classId])
+
+  const toggleLate = async (next) => {
+    setSavingLate(true); setMsg('')
+    const { error } = await supabase.from('classes').update({ allow_late_registration: next }).eq('id', classId)
+    setSavingLate(false)
+    if (error) return setMsg('Không lưu được cài đặt: ' + error.message)
+    setAllowLate(next)
+    setMsg(next
+      ? '✓ Đã cho phép đăng ký trễ. Học sinh vẫn đăng ký được trong chính ngày tự học.'
+      : '✓ Đã khóa đăng ký trễ. Từ giờ học sinh phải đăng ký xong trước 24:00 đêm hôm trước.')
+  }
 
   const toggle = async (w, p) => {
     const k = key(w, p)
@@ -47,8 +64,41 @@ export function ClassScheduleSettings({ classId, className }) {
   const total = slots.size
   const byDay = WEEKDAYS.map(([w, label]) => [label, PERIODS.filter((p) => slots.has(key(w, p)))])
     .filter(([, ps]) => ps.length)
+  // Cặp tiết liền nhau — chỗ duy nhất học sinh đăng ký được nhiệm vụ kéo dài 2 tiết.
+  const pairs = byDay.flatMap(([label, ps]) =>
+    ps.filter((p) => ps.includes(p + 1)).map((p) => `${label} tiết ${p}–${p + 1}`))
 
-  return <section className="card sched-card">
+  return <>
+  <section className="card sched-card">
+    <div className="section-title"><div>
+      <h2><Clock size={19} /> Hạn đăng ký của lớp {className}</h2>
+      <p>Hạn khóa luôn là <strong>24:00 đêm hôm trước</strong>. Ô dưới đây quyết định điều gì xảy ra sau mốc đó.</p>
+    </div></div>
+
+    <div className="toggle-row">
+      <label className="switch">
+        <input type="checkbox" checked={allowLate} disabled={savingLate}
+               onChange={(e) => toggleLate(e.target.checked)} /><span />
+      </label>
+      <div>
+        <strong>Cho phép đăng ký trễ</strong>
+        <small>{allowLate
+          ? 'Đang BẬT — học sinh vẫn đăng ký được trong chính ngày tự học, nhưng buổi đó bị đánh dấu “Trễ” trong thống kê.'
+          : 'Đang TẮT — quá 24:00 đêm hôm trước là khóa hẳn. Học sinh chỉ đăng ký được cho ngày mai trở đi.'}</small>
+      </div>
+    </div>
+
+    <div className={`notice compact ${allowLate ? '' : 'warning'}`}>
+      {allowLate ? <Clock size={16} /> : <Lock size={16} />}<span>
+        {allowLate
+          ? 'Nên giữ BẬT trong vài tuần đầu để các em quen nếp, rồi hãy tắt.'
+          : 'Đã khóa ở phía cơ sở dữ liệu, không chỉ ở giao diện — học sinh không thể lách bằng cách nào khác.'}
+      </span></div>
+
+    {msg && <div className={msg.startsWith('✓') ? 'notice compact' : 'form-error'}>{msg}</div>}
+  </section>
+
+  <section className="card sched-card">
     <div className="section-title"><div>
       <h2><CalendarClock size={19} /> Lịch tự học cố định của lớp {className}</h2>
       <p>Tick những tiết lớp được phân giờ tự học hằng tuần. Học sinh chỉ đăng ký được đúng các tiết này,
@@ -66,15 +116,20 @@ export function ClassScheduleSettings({ classId, className }) {
       </tr>)}</tbody>
     </table></div>
 
-    {msg && <div className="form-error">{msg}</div>}
-
     {total === 0
       ? <div className="notice warning compact"><CalendarClock size={16} /><span>
           Lớp chưa khai lịch. Khi chưa khai, học sinh được chọn cả 9 tiết và phần kiểm tra chỉ xét
           “em này có kế hoạch nào trong ngày không”, thay vì xét theo từng tiết.
         </span></div>
-      : <p className="muted-text small">Đã khai <strong>{total} tiết</strong>/tuần: {byDay.map(([d, ps]) => `${d} (tiết ${ps.join(', ')})`).join(' · ')}</p>}
+      : <>
+          <p className="muted-text small">Đã khai <strong>{total} tiết</strong>/tuần: {byDay.map(([d, ps]) => `${d} (tiết ${ps.join(', ')})`).join(' · ')}</p>
+          {pairs.length > 0 && <p className="muted-text small">
+            Có <strong>{pairs.length} cặp tiết liền nhau</strong> ({pairs.join(' · ')}) — ở những cặp này học sinh
+            được đăng ký <strong>một nhiệm vụ cho cả hai tiết</strong>.
+          </p>}
+        </>}
   </section>
+  </>
 }
 
 // Tab "HS chưa đăng ký": ai chưa có kế hoạch cho ngày được chọn.

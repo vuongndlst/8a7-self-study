@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarCheck2, CheckCircle2, Clock, FileCheck2, ImagePlus, KeyRound, Laptop, ListPlus, LockKeyhole, MessageSquare, Star, UploadCloud, UserPlus } from 'lucide-react'
+import { AlertTriangle, CalendarCheck2, CheckCircle2, Clock, FileCheck2, ImagePlus, KeyRound, Laptop, Layers, ListPlus, Lock, LockKeyhole, MessageSquare, Star, UploadCloud, UserPlus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 export default function GuidePage() {
@@ -11,6 +11,20 @@ export default function GuidePage() {
         <Link className="button primary" to="/register">Tạo tài khoản lần đầu</Link>
         <Link className="button ghost" to="/login">Đăng nhập</Link>
       </div>
+    </section>
+
+    <section className="card deadline-card">
+      <div className="deadline-head"><Lock size={22}/><div>
+        <span className="eyebrow">HẠN ĐĂNG KÝ</span>
+        <h2>Đăng ký xong trước 24:00 đêm hôm trước</h2>
+      </div></div>
+      <p>Muốn tự học ngày mai thì đăng ký <strong>chậm nhất là tối nay</strong>. Quá nửa đêm là đã sang ngày mới,
+         và buổi đó bị tính là <em>Trễ</em>.</p>
+      <div className="guide-tip"><AlertTriangle size={16}/><span>
+        Giáo viên có thể <strong>khóa hẳn</strong> việc đăng ký trễ. Khi lớp đã khóa, quá 24:00 là em
+        <strong> không đăng ký được nữa</strong> cho ngày hôm đó — ô chọn ngày sẽ bắt đầu từ ngày mai.
+        Đây không phải lỗi, mà là quy định của lớp.
+      </span></div>
     </section>
 
     {/* Phần quan trọng nhất đặt lên đầu: hạn cập nhật kết quả. */}
@@ -67,8 +81,12 @@ export default function GuidePage() {
            và sau này được chấm sao riêng.</p>
         <div className="guide-tip"><ListPlus size={16}/> Ở bước chọn tiết, hệ thống chỉ mở <strong>những tiết lớp mình thực sự
           được phân giờ tự học</strong> theo thời khóa biểu. Thứ nào lớp không có giờ tự học thì không chọn được — như vậy là đúng, không phải lỗi.</div>
-        <div className="guide-tip">Nên lập kế hoạch trước tối thiểu <strong>1 ngày</strong> — đăng ký trong ngày sẽ bị đánh dấu <em>Trễ</em>.
-          Nếu buổi đó em đã đăng ký rồi, nhiệm vụ mới sẽ được <strong>thêm vào buổi đang có</strong> chứ không tạo buổi trùng.</div>
+        <div className="guide-tip"><Layers size={16}/><span>
+          Nếu lớp có <strong>hai tiết tự học liền nhau</strong> và em có nhiệm vụ lớn, tick ô
+          <strong> “Làm suốt 2 tiết”</strong>. Nhiệm vụ đó tính cho cả hai tiết — em chỉ ghi một lần và
+          cập nhật kết quả một lần. Ô này chỉ hiện khi tiết liền sau cũng là giờ tự học của lớp mình.
+        </span></div>
+        <div className="guide-tip">Nếu buổi đó em đã đăng ký rồi, nhiệm vụ mới sẽ được <strong>thêm vào buổi đang có</strong> chứ không tạo buổi trùng.</div>
       </div></article>
 
       <article className="guide-step"><span className="step-number">4</span><div>
