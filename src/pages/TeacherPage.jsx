@@ -11,6 +11,7 @@ import { ClassScheduleSettings, MissingRegistrations } from '../components/Class
 import Avatar from '../components/Avatar'
 import RosterPanel from '../components/RosterPanel'
 import ClassSwitcher from '../components/ClassSwitcher'
+import TeacherOnboarding from '../components/TeacherOnboarding'
 import { ClassAnalytics, StudentAnalytics } from '../components/Analytics'
 
 const PAGE_SIZE = 25
@@ -22,7 +23,7 @@ const tomorrowISO = () => {
 }
 
 export default function TeacherPage(){
-  const {context,classes}=useAuth()
+  const {context,classes,refreshProfile}=useAuth()
   const [students,setStudents]=useState([])
   const [roster,setRoster]=useState([])
   const [plans,setPlans]=useState([])
@@ -236,6 +237,9 @@ export default function TeacherPage(){
       .map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')))
     downloadCsv(lines,`self-study-tong-hop-${context.className||'lop'}-${todayISO()}.csv`)
   }
+
+  // Chưa có lớp thì KHÔNG dựng dashboard đầy biểu đồ rỗng — chỉ ra ba việc cần làm.
+  if(!context.classId)return <TeacherOnboarding onDone={refreshProfile}/>
 
   return <div className="page teacher-page">
     <section className="dashboard-heading">

@@ -179,6 +179,43 @@ revoke all on function public.set_teacher_status(uuid, text, text) from public, 
 grant execute on function public.set_teacher_status(uuid, text, text) to authenticated;
 
 
+-- Tạo năm học mới. Không tự đoán ngày từ tên năm: trường có thể bắt đầu sớm
+-- hoặc muộn, đoán sai sẽ làm lệch phạm vi của mọi biểu đồ.
+create or replace function public.create_school_year(
+  p_name text, p_start date, p_end date, p_make_current boolean default false
+) returns json language plpgsql security definer set search_path = public as $$
+declare v_id uuid; v_name text;
+begin
+  if not public.is_admin() then
+    raise exception 'Chỉ quản trị viên mới tạo được năm học';
+  end if;
+  v_name := nullif(trim(p_name), '');
+  if v_name is null then raise exception 'Tên năm học không được để trống'; end if;
+  if p_start is null or p_end is null then raise exception 'Thiếu ngày bắt đầu hoặc kết thúc'; end if;
+  if p_end <= p_start then raise exception 'Ngày kết thúc phải sau ngày bắt đầu'; end if;
+  if exists (select 1 from public.school_years where lower(name) = lower(v_name)) then
+    raise exception 'Năm học "%" đã tồn tại', v_name;
+  end if;
+
+  insert into public.school_years (name, start_date, end_date, is_active, created_by)
+  values (v_name, p_start, p_end, false, auth.uid())
+  returning id into v_id;
+
+  insert into public.audit_log (actor_id, action, entity, entity_id, metadata)
+  values (auth.uid(), 'academic_year.created', 'school_years', v_id,
+          json_build_object('ten', v_name, 'tu', p_start, 'den', p_end));
+
+  -- Đặt làm năm hiện tại là một quyết định riêng, đi qua hàm chuyển năm để
+  -- ràng buộc "chỉ một năm hiện tại" và nhật ký đều được giữ đúng.
+  if p_make_current then perform public.set_current_school_year(v_id); end if;
+
+  return json_build_object('id', v_id, 'ten', v_name);
+end;
+$$;
+
+revoke all on function public.create_school_year(text, date, date, boolean) from public, anon;
+grant execute on function public.create_school_year(text, date, date, boolean) to authenticated;
+
 -- ============================================================================
 --  12. NHẬN LỚP
 -- ============================================================================
@@ -434,6 +471,135 @@ revoke all on function public.import_class_roster(uuid, jsonb, text, text) from 
 grant execute on function public.import_class_roster(uuid, jsonb, text, text) to authenticated;
 revoke all on function public.norm_mshs(text), public.norm_name(text) from public, anon;
 grant execute on function public.norm_mshs(text), public.norm_name(text) to authenticated;
+
+-- ============================================================================
+--  16. SỐ LIỆU THEO NĂM HỌC
+-- ============================================================================
+-- analytics_build() cũ chỉ lọc theo lớp và khoảng ngày. Với một lớp một năm thì
+-- đủ, nhưng khi học sinh lên lớp, số liệu CÁ NHÂN của em sẽ gộp cả năm cũ lẫn
+-- năm mới vào một rổ. Thêm ràng buộc năm học để mỗi năm là một phạm vi riêng.
+create or replace function public.year_bounds(p_year uuid)
+returns table (tu date, den date)
+language sql stable security definer set search_path = public as $$
+  select start_date, end_date from public.school_years
+  where id = coalesce(p_year, (select id from public.school_years where is_active));
+$$;
+
+-- Phạm vi mặc định của mọi biểu đồ: TRỌN NĂM HỌC hiện tại, cắt ở hôm nay.
+-- Không dùng "30 ngày gần nhất" vì đầu năm học sẽ ra biểu đồ trống trơn.
+create or replace function public.default_range()
+returns table (tu date, den date)
+language sql stable security definer set search_path = public as $$
+  select y.start_date, least(y.end_date, public.vn_today())
+  from public.school_years y where y.is_active;
+$$;
+
+revoke all on function public.year_bounds(uuid), public.default_range() from public, anon;
+grant execute on function public.year_bounds(uuid), public.default_range() to authenticated;
+
+-- Số liệu cá nhân của học sinh, GIỚI HẠN trong một năm học.
+-- Ghi đè bản cũ: bản cũ không biết đến năm học nên trộn dữ liệu khi em lên lớp.
+create or replace function public.student_analytics(p_student uuid, p_from date, p_to date)
+returns json language plpgsql stable security definer set search_path = public as $$
+declare v_from date; v_to date;
+begin
+  if p_student is distinct from auth.uid()
+     and not public.staff_sees_student(p_student, 'view_plans') then
+    raise exception 'Không có quyền xem số liệu của học sinh này' using errcode = '42501';
+  end if;
+  -- Kẹp khoảng ngày vào trong năm học hiện tại: dù giao diện gửi khoảng nào,
+  -- số liệu cũng không thể tràn sang năm khác.
+  select greatest(p_from, b.tu), least(p_to, b.den) into v_from, v_to
+  from public.year_bounds(null) b;
+  return public.analytics_build(null, p_student, v_from, v_to, false);
+end;
+$$;
+
+-- Số liệu toàn trường cho quản trị viên. Lọc được theo khối hoặc theo một lớp.
+create or replace function public.school_analytics(
+  p_from date, p_to date, p_grade smallint default null, p_class uuid default null
+) returns json language plpgsql stable security definer set search_path = public as $$
+declare v_year uuid; v_from date; v_to date; v_classes uuid[];
+begin
+  if not public.is_admin() then
+    raise exception 'Chỉ quản trị viên mới xem được số liệu toàn trường' using errcode = '42501';
+  end if;
+  select id into v_year from public.school_years where is_active;
+  select greatest(p_from, b.tu), least(p_to, b.den) into v_from, v_to from public.year_bounds(v_year) b;
+
+  if p_class is not null then
+    v_classes := array[p_class];
+  else
+    select coalesce(array_agg(c.id), '{}') into v_classes
+    from public.classes c
+    left join public.class_catalog cc on cc.id = c.catalog_id
+    where c.school_year_id = v_year
+      and (p_grade is null or cc.grade_level = p_grade);
+  end if;
+
+  return public.analytics_build_many(v_classes, v_from, v_to);
+end;
+$$;
+
+-- analytics_build nhận MỘT lớp; toàn trường cần nhiều lớp nên gói lại ở đây.
+create or replace function public.analytics_build_many(p_classes uuid[], p_from date, p_to date)
+returns json language sql stable security definer set search_path = public as $$
+with base as (
+  select p.id, p.student_id, p.class_id, p.session_id, p.study_date,
+         ps.has_result, ps.progress, ps.rating, ps.auto_evaluated,
+         r.completion_status,
+         (p.study_date < public.vn_today()) as da_qua,
+         (p.study_date - (p.created_at at time zone 'Asia/Ho_Chi_Minh')::date >= 1) as dung_han,
+         p.use_device
+  from public.plans p
+  join public.plan_status ps on ps.plan_id = p.id
+  left join public.reflections r on r.plan_id = p.id
+  where p.class_id = any(p_classes) and p.study_date between p_from and p_to
+),
+qua as (select * from base where da_qua)
+select json_build_object(
+  'pham_vi', json_build_object('tu', p_from, 'den', p_to, 'so_lop', coalesce(array_length(p_classes,1),0)),
+  'kpi', (select json_build_object(
+      'so_lop',        coalesce(array_length(p_classes,1),0),
+      'so_hoc_sinh',   (select count(distinct e.mshs) from public.enrollments e
+                        where e.class_id = any(p_classes) and e.is_active),
+      'so_buoi',       (select count(distinct session_id) from base),
+      'so_nhiem_vu',   (select count(*) from base),
+      'ty_le_hoan_thanh', (select case when count(*) = 0 then null
+                            else round(100.0 * count(*) filter (where completion_status = 'Hoàn thành') / count(*)) end from qua),
+      'ty_le_tre_han',    (select case when count(*) = 0 then null
+                            else round(100.0 * count(*) filter (where not has_result) / count(*)) end from qua),
+      'ty_le_dung_han',   (select case when count(*) = 0 then null
+                            else round(100.0 * count(*) filter (where dung_han) / count(*)) end from base),
+      'dung_thiet_bi',    (select count(*) filter (where use_device) from base),
+      'diem_tb',          (select round(avg(rating)::numeric, 2) from base where rating is not null)
+    )),
+  'theo_lop', (select coalesce(json_agg(x order by x->>'lop'), '[]'::json) from (
+      select json_build_object(
+        'class_id', c.id, 'lop', c.name, 'khoi', cc.grade_level,
+        'so_hoc_sinh', (select count(*) from public.enrollments e where e.class_id = c.id and e.is_active),
+        'giao_vien', (select p.full_name from public.class_teachers ct
+                      join public.profiles p on p.id = ct.teacher_id
+                      where ct.class_id = c.id and ct.role = 'primary' and ct.status = 'active'),
+        'so_nhiem_vu', (select count(*) from base b where b.class_id = c.id),
+        'ty_le_hoan_thanh', (select case when count(*) = 0 then null
+              else round(100.0 * count(*) filter (where completion_status = 'Hoàn thành') / count(*)) end
+              from qua b where b.class_id = c.id),
+        'ty_le_tre_han', (select case when count(*) = 0 then null
+              else round(100.0 * count(*) filter (where not has_result) / count(*)) end
+              from qua b where b.class_id = c.id),
+        'hoat_dong_gan_nhat', (select max(b.study_date) from base b where b.class_id = c.id)
+      ) as x
+      from public.classes c
+      left join public.class_catalog cc on cc.id = c.catalog_id
+      where c.id = any(p_classes)
+    ) t)
+);
+$$;
+
+revoke all on function public.school_analytics(date, date, smallint, uuid),
+                      public.analytics_build_many(uuid[], date, date) from public, anon;
+grant execute on function public.school_analytics(date, date, smallint, uuid) to authenticated;
 
 -- Xem trước kết quả import mà KHÔNG ghi gì.
 -- Dùng chung đúng bộ luật với import_class_roster: nếu bản xem trước tự đoán

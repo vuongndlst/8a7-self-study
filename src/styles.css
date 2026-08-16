@@ -438,3 +438,54 @@ td .pill-todo{font-size:10.5px}
   min-width:130px;cursor:pointer;font-size:14px}
 .class-switcher select:focus{outline:none}
 @media(max-width:700px){.class-switcher{width:100%}}
+
+/* ---------- Trang quan tri: bo cuc ---------- */
+.todo-grid{display:grid;gap:8px}
+.todo-row{display:flex;align-items:center;gap:14px;padding:13px 15px;border:1px solid var(--line);
+  border-radius:12px;background:#fbfdfc}
+.todo-row>strong{font-size:24px;min-width:44px;text-align:center;color:var(--muted)}
+.todo-row>span{flex:1;font-size:14px}
+.todo-row.on{border-color:#e8b45f;background:var(--warn-bg)}
+.todo-row.on>strong{color:#8a5a12}
+.coverage-bar{height:10px;border-radius:999px;background:#eef3ef;overflow:hidden;margin:6px 0 14px}
+.coverage-bar>span{display:block;height:100%;background:var(--green);border-radius:999px;transition:width .3s}
+.grade-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.grade-stat{border:1px solid var(--line);border-radius:11px;padding:11px;text-align:center}
+.grade-stat span{display:block;font-size:12px;color:var(--muted)}
+.grade-stat strong{font-size:19px}
+
+.state-pill{display:inline-block;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}
+.state-pill.ok{background:#dceae2;color:var(--green)}
+.state-pill.warn{background:#f5d99a;color:#7a4f08}
+.state-pill.err{background:var(--danger-bg);color:var(--danger)}
+.state-pill.off{background:#eef1ef;color:var(--muted)}
+tr.row-dim td{opacity:.62}
+
+.class-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:9px}
+.class-chip{display:grid;gap:2px;text-align:left;padding:11px 13px;border-radius:12px;cursor:pointer;
+  border:1px solid #e8c584;background:var(--warn-bg);font:inherit;transition:.15s}
+.class-chip strong{font-size:15px;color:#7a4f08}
+.class-chip small{font-size:11.5px;color:#8a5a12}
+.class-chip:hover{transform:translateY(-1px)}
+.class-chip.ok{border-color:#bcd3c5;background:#f4f9f6}
+.class-chip.ok strong{color:var(--green)}
+.class-chip.ok small{color:var(--muted)}
+.class-chip.picked{border-color:var(--green);box-shadow:0 0 0 2px rgba(37,115,86,.2)}
+.class-chip.off{opacity:.5;cursor:not-allowed}
+.class-chip.off:hover{transform:none}
+.class-grid.pick .class-chip{border-color:#bcd3c5;background:#f4f9f6}
+.class-grid.pick .class-chip strong{color:var(--green)}
+.class-grid.pick .class-chip.off{border-color:var(--line);background:#f6f7f6}
+.class-grid.pick .class-chip.off strong{color:var(--muted)}
+
+/* ---------- Onboarding giao vien ---------- */
+.onboard-card{padding:28px}
+.onboard-head{display:flex;gap:18px;align-items:flex-start}
+.onboard-head>svg{color:var(--green);flex:0 0 auto;margin-top:4px}
+.onboard-head h1{margin:2px 0 6px;font-size:27px}
+.onboard-head p{margin:0;color:var(--muted)}
+.onboard-steps{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:8px}
+.onboard-steps li{display:flex;align-items:center;gap:10px;padding:10px 13px;border-radius:11px;
+  background:#f6f8f7;color:var(--muted);font-size:14px}
+.onboard-steps li.done{background:#f4f9f6;color:var(--green);font-weight:700}
+.onboard-steps li.active{background:#fff;border:1px solid var(--green);color:var(--text);font-weight:700}
