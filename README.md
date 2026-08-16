@@ -1,8 +1,9 @@
-﻿# Self-Study — quản lý giờ tự học
+# Self-Study — quản lý giờ tự học toàn trường
 
-Web quản lý giờ tự học theo quy trình **Plan → Do → Reflect**.
+Web quản lý giờ tự học theo quy trình **Plan → Do → Reflect**, dùng chung cho nhiều lớp,
+nhiều giáo viên và nhiều năm học. Trường THCS & THPT Đinh Thiện Lý (LSTS).
 
-**Đang chạy tại:** https://vuongndlst.github.io/8a7-self-study/
+**Đang chạy tại:** https://vuongndlst.github.io/lsts-self-study/
 
 - Frontend: React + Vite · Hosting: GitHub Pages · Backend: Supabase
 - Routing: HashRouter (không lỗi 404 khi refresh trên GitHub Pages)
@@ -81,26 +82,29 @@ Luật được ép ở **ba tầng** để không thể bỏ qua bằng DevTool
 học sinh bị chặn ở màn **“Đặt mật khẩu riêng của em”** trước khi vào được bất kỳ trang
 nào. Chỉ Edge Function mới hạ được cờ — học sinh không tự sửa `profiles` được.
 
-### Quên mật khẩu
+### Quên mật khẩu — hai đường
 
-Học sinh báo giáo viên. Trên dashboard, tab **Theo học sinh** liệt kê **toàn bộ** học
-sinh của lớp (kể cả em chưa tạo tài khoản) — tick chọn một hoặc nhiều em rồi bấm **Đặt
-lại mật khẩu**. Hệ thống sinh mật khẩu tạm cho từng em và hiện ra một lần duy nhất, kèm
-nút chép cả danh sách. Giáo viên đưa trực tiếp cho học sinh.
+**Đường 1 — tự đặt lại qua email.** Nút **Quên mật khẩu?** ngay trang đăng nhập. Xem mục 2b.
+
+**Đường 2 — giáo viên cấp mật khẩu tạm.** Dùng khi em không mở được hộp thư trường. Trên
+dashboard, tab **Theo học sinh** liệt kê **toàn bộ** học sinh của lớp (kể cả em chưa tạo
+tài khoản) — tick chọn một hoặc nhiều em rồi bấm **Đặt lại mật khẩu**. Hệ thống sinh mật
+khẩu tạm cho từng em và hiện ra một lần duy nhất, kèm nút chép cả danh sách.
 
 Mật khẩu tạm bỏ các ký tự dễ đọc nhầm khi chép tay (`0/O`, `1/l/I`).
 
-> Hệ thống **không gửi email**: domain trường nằm trên Microsoft 365, tài khoản giáo viên
-> không có quyền quản trị Entra ID để tạo app `Mail.Send`, và cũng không bật được SMTP
-> AUTH. Mọi nhắc nhở vì thế hiển thị thẳng trong ứng dụng thay vì gửi thư.
+> **Nhắc nhở vẫn hiển thị trong ứng dụng, không gửi email.** SMTP đã cấu hình nhưng chỉ
+> phục vụ thư xác thực của Supabase (đặt lại mật khẩu, magic link) — không dùng để gửi
+> thư tùy ý. Gửi nhắc quá hạn cho vài trăm học sinh mỗi ngày cũng vượt hạn mức Gmail.
+> Xem mục 10.
 
 ## 2b. Email: quên mật khẩu
 
 Nút **Quên mật khẩu?** có ở cả hai tab đăng nhập. Học sinh nhập MSHS (thư đi tới
 `MSHS@lsts.edu.vn`), giáo viên nhập email trường.
 
-Frontend đã sẵn sàng. Phần còn lại là **cấu hình SMTP trong Supabase** — chưa cấu hình thì
-Supabase vẫn nhận lệnh nhưng thư không bao giờ tới.
+SMTP đã được cấu hình trên project này. Ghi lại các bước để năm sau dựng lại còn biết
+đường — và vì nếu thiếu bước nào, Supabase vẫn nhận lệnh nhưng thư không bao giờ tới.
 
 Supabase Dashboard → Project Settings → **Authentication → SMTP Settings** → *Enable custom
 SMTP*:
@@ -119,10 +123,14 @@ App Password lấy ở [myaccount.google.com/apppasswords](https://myaccount.goo
 Sau đó vào **Authentication → URL Configuration**, thêm site URL vào *Redirect URLs*:
 
 ```text
-https://vuongndlst.github.io/8a7-self-study/
+https://vuongndlst.github.io/lsts-self-study/
 ```
 
 Thiếu bước này thì bấm link trong email sẽ ra trang trắng.
+
+> **Đổi tên repo là phải sửa lại chỗ này.** Redirect URL phải khớp chính xác URL trang
+> đang chạy; đổi tên repo mà quên sửa thì link đặt lại mật khẩu gãy im lặng — người dùng
+> bấm vào chỉ thấy trang trắng, không có thông báo lỗi nào.
 
 > **Giới hạn cần biết.** Gmail cá nhân ~500 thư/ngày, Workspace ~2000. Đủ cho việc đặt lại
 > mật khẩu, **không đủ** để gửi nhắc nhở hàng loạt cho vài trăm học sinh mỗi ngày. Với
@@ -150,7 +158,7 @@ VITE_SUPABASE_URL=https://qzvlwffxvewhfztnxxzb.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_…
 VITE_TEACHER_EMAIL=ict.vuongnd@lsts.edu.vn
 VITE_STUDENT_EMAIL_DOMAIN=lsts.edu.vn
-VITE_BRAND_MARK=8A7
+VITE_BRAND_MARK=LSTS
 ```
 
 Publishable key được phép lộ ra frontend. **Không** đưa `service_role` / secret key vào

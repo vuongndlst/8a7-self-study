@@ -1,4 +1,4 @@
-# Security notes — 8A7 Self-Study
+# Security notes — LSTS Self-Study
 
 ## Nguyên tắc
 
