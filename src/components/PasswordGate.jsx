@@ -10,6 +10,8 @@ import { useAuth } from '../context/AuthContext'
 export default function PasswordGate({ mode }) {
   const { profile, refreshProfile, clearRecovery, signOut } = useAuth()
   const mshs = profile?.mshs ?? ''
+  // Giáo viên do quản trị viên tạo cũng qua màn này, nên lời văn phải đổi theo.
+  const staff = profile?.role === 'teacher' || profile?.role === 'admin'
   const [current, setCurrent] = useState('')
   const [pw, setPw] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -33,7 +35,7 @@ export default function PasswordGate({ mode }) {
       return
     }
 
-    if (!current) { setBusy(false); return setError('Hãy nhập mật khẩu tạm mà giáo viên đã cấp.') }
+    if (!current) { setBusy(false); return setError(staff ? 'Hãy nhập mật khẩu tạm quản trị viên đã cấp.' : 'Hãy nhập mật khẩu tạm mà giáo viên đã cấp.') }
     const { ok, data } = await callFunction('student-change-password', { currentPassword: current, newPassword: pw })
     setBusy(false)
     if (!ok) return setError(data?.error || 'Không thể đổi mật khẩu. Hãy thử lại.')
@@ -46,7 +48,7 @@ export default function PasswordGate({ mode }) {
         <div className="icon-circle"><ShieldAlert /></div>
         <div>
           <span className="eyebrow">BẮT BUỘC</span>
-          <h2>{mode === 'recovery' ? 'Đặt mật khẩu mới' : 'Đặt mật khẩu riêng của em'}</h2>
+          <h2>{mode === 'recovery' ? 'Đặt mật khẩu mới' : staff ? 'Đặt mật khẩu riêng của thầy/cô' : 'Đặt mật khẩu riêng của em'}</h2>
         </div>
       </div>
       <p className="muted-text">
@@ -56,7 +58,7 @@ export default function PasswordGate({ mode }) {
       </p>
 
       {mode !== 'recovery' && <>
-        <label>Mật khẩu tạm giáo viên cấp *</label>
+        <label>{staff ? 'Mật khẩu tạm quản trị viên cấp *' : 'Mật khẩu tạm giáo viên cấp *'}</label>
         <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
       </>}
 

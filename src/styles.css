@@ -402,3 +402,30 @@ td .pill-todo{font-size:10.5px}
 .missing-chip.ok small{color:var(--green)}
 .button.small{padding:6px 11px;font-size:12.5px}
 .row-actions{display:flex;gap:6px;flex-wrap:wrap}
+
+/* ---------- Mat khau tam hien mot lan ---------- */
+.temp-password{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:22px;font-weight:700;
+  letter-spacing:2px;background:#f3f7f4;border:1px dashed #bcd3c5;border-radius:10px;
+  padding:12px 14px;margin:6px 0 0;text-align:center;user-select:all;word-break:break-all}
+.admin-page td .span-chip{margin:0 4px 3px 0}
+
+/* ---------- Import tu Excel ---------- */
+.modal.wide{max-width:900px}
+.drop-zone{display:grid;justify-items:center;gap:10px;padding:26px;margin:14px 0;
+  border:2px dashed var(--line);border-radius:14px;background:#fbfdfc;text-align:center}
+.drop-zone>svg{color:var(--green)}
+.drop-zone p{margin:0;color:var(--muted)}
+.import-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:14px 0}
+.sum-card{border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;background:#fff}
+.sum-card strong{display:block;font-size:26px;line-height:1.1}
+.sum-card span{font-size:12px;color:var(--muted)}
+.sum-card.ok{border-color:#bcd3c5;background:#f4f9f6}
+.sum-card.ok strong{color:var(--green)}
+.sum-card.warn{border-color:#e8c584;background:var(--warn-bg)}
+.sum-card.warn strong{color:#8a5a12}
+.sum-card.err{border-color:#e6a3a3;background:var(--danger-bg)}
+.sum-card.err strong{color:var(--danger)}
+.import-table{max-height:340px;overflow:auto;margin:6px 0 12px}
+.import-table tr.row-err{background:var(--danger-bg)}
+.import-table tr.row-warn{background:var(--warn-bg)}
+.pw-cell{font-family:ui-monospace,Consolas,monospace;font-weight:700;letter-spacing:1px;user-select:all}

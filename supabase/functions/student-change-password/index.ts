@@ -26,18 +26,28 @@ Deno.serve(async (req) => {
     const { data: userData, error: userError } = await admin.auth.getUser(token)
     if (userError || !userData.user) return json({ ok: false, error: 'Phiên đăng nhập không hợp lệ.' }, 401)
 
+    // Dùng được cho MỌI vai trò. Giáo viên do quản trị viên tạo cũng phải đổi mật
+    // khẩu tạm ở lần đăng nhập đầu, và trước đây bị chặn ngay tại đây nên kẹt hẳn
+    // ở màn hình đổi mật khẩu, không vào được hệ thống.
     const { data: profile } = await admin.from('profiles')
       .select('id, role, mshs').eq('id', userData.user.id).maybeSingle()
-    if (!profile || profile.role !== 'student' || !profile.mshs) {
-      return json({ ok: false, error: 'Chỉ tài khoản học sinh dùng được chức năng này.' }, 403)
+    if (!profile) return json({ ok: false, error: 'Không tìm thấy hồ sơ.' }, 403)
+    if (profile.role === 'student' && !profile.mshs) {
+      return json({ ok: false, error: 'Tài khoản học sinh thiếu MSHS.' }, 403)
     }
+
+    // Email đăng nhập: học sinh là MSHS@domain, nhân sự là email thật.
+    const loginEmail = profile.role === 'student'
+      ? studentEmail(profile.mshs!)
+      : (userData.user.email ?? '')
+    if (!loginEmail) return json({ ok: false, error: 'Tài khoản chưa có email đăng nhập.' }, 400)
 
     const { currentPassword, newPassword } = await req.json()
     const current = String(currentPassword || '')
     const next = String(newPassword || '')
 
     if (!current) return json({ ok: false, error: 'Hãy nhập mật khẩu hiện tại.' }, 400)
-    if (!validStudentPassword(next, profile.mshs)) {
+    if (!validStudentPassword(next, profile.mshs ?? '')) {
       return json({ ok: false, error: PASSWORD_RULE_MESSAGE }, 400)
     }
     if (next === current) {
@@ -47,7 +57,7 @@ Deno.serve(async (req) => {
     // Xác minh mật khẩu hiện tại bằng một client rời, không đụng tới phiên đang dùng.
     const verifier = createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false } })
     const { error: signInError } = await verifier.auth.signInWithPassword({
-      email: studentEmail(profile.mshs),
+      email: loginEmail,
       password: current,
     })
     if (signInError) return json({ ok: false, error: 'Mật khẩu hiện tại chưa đúng.' }, 400)
