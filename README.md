@@ -900,6 +900,100 @@ vừa có quyền giáo viên, học sinh bị chặn đúng chỗ, và số li�
 > dùng hệ thống thật nên số nhiệm vụ/phản tư đổi từng ngày; test cắm số cứng sẽ báo động
 > giả rồi mất luôn tác dụng.
 
+## 11c. Chia sẻ sách
+
+Mỗi tuần một học sinh giới thiệu một cuốn sách trước lớp. Em nộp nội dung và link trình chiếu
+**trước ngày báo cáo 3 ngày**. Toàn bộ nằm ở [`supabase/schema-5-books.sql`](supabase/schema-5-books.sql)
+và [`src/components/BookShare.jsx`](src/components/BookShare.jsx).
+
+### Công tắc theo lớp — không phải lớp nào cũng làm
+
+`classes.book_share_enabled`, **chỉ quản trị viên bật/tắt** (tab *Lớp học* trong trang Quản trị).
+Lớp chưa bật thì mục lục, tab giáo viên, thẻ học sinh đều ẩn. Hiện chỉ bật cho **8A7**.
+
+Quyền kiểm ở `set_book_share_enabled()` — `is_admin()` chứ không phải chỉ ẩn nút.
+
+### Lịch là dữ liệu, không phải code
+
+`book_share_weeks` giữ 43 tuần với ba loại:
+
+| Loại | Nghĩa |
+|---|---|
+| `share` | Tuần có chia sẻ, đã xếp học sinh |
+| `reserve` | **Tuần dự phòng** — để trống, dùng khi cần dời lịch |
+| `off` | Nghỉ hẳn: ôn thi, thi, Tết |
+
+Chỉ tuần **ôn thi / thi / Tết** mới là `off`. Mọi tuần trống còn lại là **dự phòng**, để giáo
+viên có chỗ dời khi một em ốm hay lớp có sự kiện. 8A7 hiện: **31 share · 6 dự phòng · 6 nghỉ**.
+
+`due_date` là **cột GENERATED** `= report_date - 3`. Không ai ghi tay vào được, và đổi ngày báo
+cáo là nó tự tính lại — đúng hành vi file Excel gốc. Ba tuần dời lịch (20/11, Noel, 16/04) chỉ
+là ba dòng dữ liệu khác nhau, không phải ba nhánh `if` trong code.
+
+Giáo viên đổi loại tuần, dời ngày, xếp lại học sinh ngay trong bảng ở tab **Chia sẻ sách**;
+hoặc nhập hàng loạt từ [file mẫu](public/templates/Mau_lich_chia_se_sach.xlsx).
+
+### Học sinh chỉ sửa được nội dung — chặn bằng trigger, không bằng RLS
+
+RLS chặn được **dòng** chứ không chặn được **cột**. Nếu chỉ dựa vào RLS thì em nào biết gọi API
+là tự chấm 5 sao cho mình được. `book_shares_guard_columns` (cùng cơ chế với `plans_guard_columns`)
+hoàn nguyên mọi cột ngoài phạm vi của người đang sửa:
+
+| Ai | Sửa được |
+|---|---|
+| Học sinh (chính chủ) | tên sách · tác giả · tóm tắt · bài học · link |
+| Cán sự thư viện | nhận xét cán sự |
+| Giáo viên | tất cả, kể cả phân công tuần |
+
+Đã thử tấn công thật bằng phiên đăng nhập của học sinh, gọi thẳng PostgREST:
+
+| Tấn công | Kết quả |
+|---|---|
+| Tự chấm 5 sao + tự viết nhận xét giáo viên + tự đánh dấu đã chia sẻ | HTTP 200 nhưng **cả 4 cột vẫn null** — trigger hoàn nguyên |
+| Đổi ngày báo cáo của tuần | RLS chặn — ngày giữ nguyên |
+| Xoá lượt của bạn khác | RLS chặn — dòng còn nguyên |
+| Đổi chủ nhân lượt sang bạn khác | trigger hoàn nguyên — `mshs` không đổi |
+
+Trong cả bốn lần, phần nội dung em **được phép** sửa vẫn giữ nguyên vẹn.
+
+### Cán sự thư viện tái dùng bảng trợ giảng
+
+Thêm cờ `class_assistants.can_review_books` thay vì dựng hệ vai trò thứ hai. Cán sự thấy dải
+*Sắp chia sẻ sách* ngay đầu trang trợ giảng và viết được nhận xét trong bảng lớp.
+
+### Nhìn thấy liên tục, không chỉ lúc có thông báo
+
+Thông báo đẩy một lần rồi trôi; lịch thì phải luôn nhìn thấy. Nên có **cả hai**:
+
+- Ô **“Chia sẻ sách · tuần N”** trong hộp việc cần xử lý của giáo viên, hiện tên em sắp tới lượt
+  và **đổi màu cảnh báo khi quá hạn nộp mà link còn trống**.
+- Dải **Sắp chia sẻ sách** (4 tuần) ở tab giáo viên và trang cán sự.
+- Trang **`#/books`** — bảng cả năm, ai trong lớp cũng vào xem bất cứ lúc nào.
+
+Năm mốc nhắc, chạy trên `process_book_share_reminders()` lúc 08:00 giờ Việt Nam, `dedupe_key`
+đảm bảo không nhắc trùng:
+
+| Mốc | Ai nhận |
+|---|---|
+| Sáng thứ Hai — tóm tắt tuần này + tuần sau | GV + cán sự |
+| Báo cáo − 7 ngày | Học sinh |
+| Báo cáo − 3 ngày (hạn nộp), chỉ khi link còn trống | Học sinh |
+| Báo cáo − 1 ngày | GV + cán sự |
+| Quá hạn nộp | GV + cán sự |
+
+### Ba chi tiết dễ làm sai, đã cố định
+
+1. **`upcoming_book_shares` sắp theo `report_date`, không phải `starts_on`.** Giáo viên dời lịch
+   là hai mốc này lệch nhau — lúc kiểm chứng, ô dashboard hiện “tuần 4” trong khi tuần 42 báo cáo
+   sớm hơn 9 ngày.
+2. **`teacher_by` / `monitor_by` dùng `ON DELETE SET NULL`.** Không có thì xoá một tài khoản giáo
+   viên cũ sẽ bị khoá lại vì còn bài chia sẻ tham chiếu tới.
+3. **“Công khai” nghĩa là công khai TRONG LỚP.** Trang `#/books` vẫn yêu cầu đăng nhập và RLS vẫn
+   chặn người ngoài lớp. Bài làm của học sinh chưa thành niên không nên để ai có link cũng đọc được.
+
+Hai bảng mới cũng bị thu hồi quyền `anon` như mục 17/18 — **0 bảng, 0 hàm**. Hàm trigger nằm ngoài
+whitelist nên phải revoke tay; kiểm tra thực tế bắt được đúng một hàm bị sót.
+
 ## 12. Quyền dữ liệu
 
 **Học sinh** — chỉ đọc/ghi dữ liệu của chính mình; không đọc danh sách lớp; chỉ tạo kế

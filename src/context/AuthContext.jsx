@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 
 const AuthContext = createContext(null)
 
-const EMPTY_CONTEXT = { className: '', yearName: '', classId: null, gradeLevel: null }
+const EMPTY_CONTEXT = { className: '', yearName: '', classId: null, gradeLevel: null, bookShare: false }
 // Chỉ là tiện lợi: nhớ lớp đã xem lần trước. Quyền vẫn do my_classes() quyết định.
 const CLASS_KEY = 'selfstudy.selectedClass'
 
@@ -90,6 +90,21 @@ export function AuthProvider({ children }) {
     })
     return () => { active = false; sub.subscription.unsubscribe() }
   }, [])
+
+  // Chia sẻ sách là hoạt động của riêng từng lớp — không phải lớp nào cũng làm.
+  // Đọc công tắc theo lớp đang xem để toàn bộ giao diện liên quan tự ẩn/hiện.
+  useEffect(() => {
+    if (!context.classId) return
+    let alive = true
+    supabase.from('classes').select('book_share_enabled').eq('id', context.classId).maybeSingle()
+      .then(({ data }) => {
+        if (!alive) return
+        const on = !!data?.book_share_enabled
+        setContext((prev) => (prev.classId === context.classId && prev.bookShare !== on
+          ? { ...prev, bookShare: on } : prev))
+      })
+    return () => { alive = false }
+  }, [context.classId])
 
   // Đổi lớp đang xem. Chỉ chấp nhận lớp nằm trong danh sách được phép.
   const selectClass = (classId) => {

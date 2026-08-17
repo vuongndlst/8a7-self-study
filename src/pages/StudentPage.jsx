@@ -13,6 +13,7 @@ import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
 import SessionRegister from '../components/SessionRegister'
 import Avatar, { AvatarUploader } from '../components/Avatar'
 import { StudentAnalytics } from '../components/Analytics'
+import { MyBookShare } from '../components/BookShare'
 
 const activityOptions=['Bài tập cá nhân','Ôn tập','Công việc nhóm','Đọc sách','Chuẩn bị nội dung chia sẻ','Khác']
 const subjectOptions=['Toán','Ngữ văn','Tiếng Anh','Khoa học tự nhiên','Lịch sử & Địa lý','GDCD','Tin học','Công nghệ','Nghệ thuật','Khác']
@@ -188,6 +189,10 @@ export default function StudentPage(){
         <small>{c.hint}</small>
       </button>)}
     </section>}
+
+    {/* Lượt chia sẻ sách LUÔN hiện cho tới khi em chia sẻ xong — đây là việc có
+        hạn chót riêng, không được để lẫn vào danh sách tiết tự học. */}
+    <MyBookShare/>
 
     {newComments>0&&<div className="notice"><MessageSquareQuote size={18}/><span>Giáo viên đã nhận xét <strong>{newComments}</strong> lần phản tư của em.</span></div>}
     {message&&<div className="notice"><ShieldCheck size={18}/><span>{message}</span></div>}

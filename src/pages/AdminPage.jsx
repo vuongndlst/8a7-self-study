@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   CalendarRange, Check, ClipboardCopy, FileSpreadsheet, GraduationCap, KeyRound,
-  LayoutGrid, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, UserCheck, UserPlus, UserX, X,
+  LayoutGrid, Library, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, UserCheck, UserPlus, UserX, X,
 } from 'lucide-react'
 import { supabase, callFunction } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -53,7 +53,7 @@ export default function AdminPage() {
         .in('role', ['teacher', 'admin']).order('full_name'),
       supabase.from('school_years').select('*').order('start_date', { ascending: false }),
       supabase.from('class_catalog').select('*').eq('is_active', true),
-      supabase.from('classes').select('id,name,school_year_id,catalog_id'),
+      supabase.from('classes').select('id,name,school_year_id,catalog_id,book_share_enabled'),
       supabase.from('class_teachers').select('class_id,teacher_id,role,status').eq('status', 'active'),
     ])
     setTeachers(t ?? []); setYears(y ?? []); setCatalog(cat ?? []); setClasses(cls ?? [])
@@ -61,6 +61,15 @@ export default function AdminPage() {
     setLoading(false)
   }
   useEffect(() => { load() }, [])
+
+  // Bật/tắt hoạt động chia sẻ sách cho một lớp. Quyền kiểm ở phía CSDL
+  // (set_book_share_enabled chỉ cho is_admin), không phải chỉ ẩn nút ở đây.
+  const toggleBookShare = async (c) => {
+    const { error } = await supabase.rpc('set_book_share_enabled',
+      { p_class: c.id, p_on: !c.book_share_enabled })
+    if (error) return window.alert('Không đổi được: ' + error.message)
+    load()
+  }
 
   const currentYear = years.find((y) => y.is_active)
   const yearClasses = useMemo(
@@ -264,6 +273,21 @@ export default function AdminPage() {
             })}</div>
           </div>
         })}
+      </section>}
+
+      {tab === 'classes' && <section className="card table-card">
+        <div className="section-title"><div>
+          <h2><Library size={19} /> Hoạt động chia sẻ sách</h2>
+          <p>Không phải lớp nào cũng làm hoạt động này, nên nó nằm sau công tắc riêng của từng lớp.
+             Lớp chưa bật thì toàn bộ giao diện chia sẻ sách ẩn đi với cả giáo viên lẫn học sinh.</p>
+        </div></div>
+        <div className="class-grid">{yearClasses.slice().sort((a, b) => byClassCode(a.name, b.name)).map((c) =>
+          <button key={c.id} type="button" className={`class-chip ${c.book_share_enabled ? 'ok' : ''}`}
+                  onClick={() => toggleBookShare(c)}>
+            <strong>{c.name}</strong>
+            <small>{c.book_share_enabled ? '✓ Đang bật — bấm để tắt' : 'Đang tắt — bấm để bật'}</small>
+          </button>)}
+        </div>
       </section>}
 
       {tab === 'years' && <section className="card table-card">

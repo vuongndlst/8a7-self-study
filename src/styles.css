@@ -625,3 +625,30 @@ th,td{padding:11px 12px}
   .todo-bar{grid-template-columns:1fr}
   .todo-card strong{font-size:26px}
 }
+
+/* ---------- v9: chia se sach ---------- */
+.book-card{padding:24px;margin:0 0 22px}
+.book-card.late{border-color:#f0cdcd;box-shadow:0 0 0 2px rgba(190,60,60,.12)}
+.book-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px}
+.book-head h2{margin:8px 0 6px;font-size:24px}
+.book-card label{display:block;margin:14px 0 5px;font-size:12.5px;font-weight:700;color:#4a545b}
+.book-card textarea{width:100%;resize:vertical}
+
+.book-table{min-width:820px}
+.book-table td small{display:block;color:var(--muted);margin-top:3px;white-space:normal}
+.book-table select,.book-table input[type=date]{margin:0;padding:7px 9px;font-size:12.5px;min-width:120px}
+.book-table tr.row-late td{background:#fff7f5}
+.book-table tr.busy{opacity:.5}
+.clickable-row{cursor:pointer}
+.clickable-row:hover td{background:#f4f8fb}
+
+/* Ô "Chia sẻ sách" ở hộp việc cần xử lý chứa TÊN chứ không phải số, nên chữ
+   phải nhỏ lại và được phép xuống dòng — nếu để cỡ 29px như các ô đếm thì tên
+   dài sẽ tràn ra ngoài thẻ. */
+.inbox-grid .stat-card strong{overflow-wrap:anywhere}
+.inbox-grid .stat-card strong:not(:only-child){font-size:clamp(15px,1.4vw,20px);line-height:1.25;letter-spacing:-.3px}
+
+@media(max-width:700px){
+  .book-head{flex-direction:column}
+  .book-card{padding:18px}
+}

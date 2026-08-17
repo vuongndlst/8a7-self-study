@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { LifeBuoy, MessageSquare, RefreshCw, Search, ShieldCheck, UserX } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { selectIn, daysAgoISO } from '../lib/query'
@@ -8,6 +9,7 @@ import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
 import RatingStars from '../components/RatingStars'
 import StatusBadge from '../components/StatusBadge'
 import Avatar from '../components/Avatar'
+import { BookShareUpcoming } from '../components/BookShare'
 
 const PAGE_SIZE = 25
 
@@ -27,6 +29,7 @@ const PERM_LABEL = {
   can_comment: 'Viết nhận xét',
   can_review_device: 'Duyệt thiết bị',
   can_approve_plan: 'Duyệt kế hoạch',
+  can_review_books: 'Theo dõi & nhận xét chia sẻ sách',
 }
 
 export default function TaPage() {
@@ -151,6 +154,16 @@ export default function TaPage() {
       </div>
       <div className="button-row"><button className="button ghost" onClick={() => { load(); checkMissing(missingDate) }}><RefreshCw size={17} /> Làm mới</button></div>
     </section>
+
+    {/* Cán sự thư viện cần thấy lịch chia sẻ sách LIÊN TỤC, không chỉ lúc hệ
+        thống bắn thông báo — nên dải này đứng ngay đầu trang. */}
+    {context.bookShare && assistant.can_review_books && <>
+      <BookShareUpcoming classId={context.classId} weeks={4} title="Sắp chia sẻ sách" />
+      <p className="muted-text small">
+        Xem toàn bộ bài chia sẻ của lớp và viết nhận xét ở trang{' '}
+        <Link to="/books"><strong>Chia sẻ sách</strong></Link>.
+      </p>
+    </>}
 
     {assistant.can_view_plans && <section className="stats-grid">
       <Stat label={`Nhiệm vụ ${rangeLabel}`} value={stats.tasks} />
