@@ -748,6 +748,81 @@ Ba giới hạn nghiệp vụ chống lạm dụng, đặt ở trigger nên gọ
 chi tiết từng dòng import cũ hơn 90 ngày. Bản tóm tắt `student_import_batches` **giữ vĩnh
 viễn** để còn đối chiếu khi giáo viên báo nhập nhầm file.
 
+Job này **không đụng tới kế hoạch, phản tư, minh chứng hay điểm sao** — không có dữ liệu học
+tập nào bị xóa, ở bất kỳ thời điểm nào. Nó chỉ dọn hai thứ vô hại: thông báo cũ trong chuông
+mà em đã đọc rồi, và bản nháp từng dòng của các lần import cũ.
+
+### Chỉ nạp phần đang cần — lọc theo lớp, theo khoảng thời gian
+
+Chỉ mục thôi chưa đủ. Bảng điều khiển giáo viên trước đây gọi
+`from('plans').select('*')` **không kèm điều kiện lọc nào** — nó kéo về mọi kế hoạch mà RLS
+cho phép nhìn thấy. Với một lớp thì không ai nhận ra; với giáo viên dạy nhiều lớp qua nhiều
+năm — và nhất là **tài khoản quản trị, vốn nhìn thấy toàn trường** — thì mỗi lần mở trang là
+một lần tải về toàn bộ lịch sử. Trang TA mắc đúng lỗi đó.
+
+Đo trên bảng thử 90.000 dòng (30 lớp × 30 em × 100 nhiệm vụ/năm), cùng chỉ mục
+`(class_id, study_date desc, student_id)`:
+
+| Truy vấn | Kế hoạch thực thi | Thời gian | Dòng trả về |
+|---|---|---|---|
+| Không lọc gì (mã cũ) | Seq Scan — quét toàn bảng | 120,4 ms | 90.000 |
+| Lọc theo lớp, cả năm | Index Scan | 7,9 ms | 3.000 |
+| Lọc theo lớp + 60 ngày | Index Scan | **3,2 ms** | **600** |
+
+Thời gian truy vấn giảm 38 lần, nhưng phần quan trọng hơn là **lượng dữ liệu đi qua mạng**:
+600 dòng thay vì 90.000 — và mỗi dòng kế hoạch còn kéo theo phản tư, minh chứng, trạng thái
+tiến độ đi cùng.
+
+Lớp thuộc đúng một năm học, nên **lọc theo lớp đã tự khoanh luôn theo năm** — không cần điều
+kiện riêng cho năm học.
+
+Ô **“Nạp: 60 ngày qua”** trên thanh lọc cho giáo viên tự chọn 30 / 60 / 120 ngày / cả năm.
+Cần phân biệt với hai ô **“Từ ngày / Đến ngày”** ngay cạnh: ô *Nạp* quyết định lấy bao nhiêu
+về máy, hai ô kia chỉ lọc trong phần đã lấy.
+
+### Cắt khúc mọi truy vấn `.in(...)`
+
+PostgREST nhét cả danh sách id vào query string. Một lớp 32 em trong 60 ngày là ~550 kế
+hoạch; 550 uuid là URL dài hơn 20 KB — vượt giới hạn proxy và trả về 414 mà **không có thông
+báo lỗi rõ ràng**, giao diện chỉ hiện trống trơn.
+
+`selectIn()` trong [`src/lib/query.js`](src/lib/query.js) cắt thành khúc 150 id, chạy song
+song rồi gộp lại. Mọi chỗ trước đây dùng `.in('plan_id', ids)` đều đã chuyển sang hàm này.
+
+### Ảnh minh chứng: nén trên máy học sinh trước khi tải lên
+
+Đo trên dữ liệu thật: 21 file minh chứng thì **cả 21 đều là ảnh**, JPEG trung bình **732 KB**,
+file lớn nhất **3,5 MB**. Đó là ảnh gốc điện thoại — 4000×3000 px, trong khi màn hình thầy cô
+chỉ cần khoảng 1600 px là đã dư nét.
+
+[`src/lib/image.js`](src/lib/image.js) thu ảnh về cạnh dài 1600 px, mã hóa WebP chất lượng
+0,82 — nhẹ đi khoảng 6 lần. Nén ở trình duyệt chứ không phải ở máy chủ, nên mạng nhà trường
+cũng không phải cõng 3,5 MB rồi mới biết là thừa.
+
+Ba lối thoát an toàn: trình duyệt cũ không có `createImageBitmap`, không encode được WebP,
+hoặc nén xong lại to hơn bản gốc (ảnh vốn đã nhỏ) → giữ nguyên file gốc. Thà nặng còn hơn em
+không nộp được bài.
+
+Vì ảnh được nén trước khi lên, mốc cho phép nâng từ 5 MB lên **12 MB cho ảnh**; PDF tải lên
+nguyên trạng nên vẫn giữ 5 MB.
+
+### Vì sao không chuyển kho ảnh sang Google Drive
+
+Đã cân nhắc và **không làm**, vì ba lý do kỹ thuật:
+
+1. **Không có chỗ an toàn để giữ khóa.** Truy cập Drive cần OAuth token hoặc service account.
+   Không được đưa thứ đó xuống frontend — cùng nguyên tắc với service-role key. Muốn làm đúng
+   thì phải qua Edge Function, tức là thêm một tầng phải tự bảo trì.
+2. **Drive không hiểu RLS.** Hiện mỗi lần xem ảnh, hệ thống cấp một link ký hạn 120 giây, và
+   ai được xem thì do chính RLS quyết định. Trên Drive chỉ có hai lựa chọn: “ai có link đều
+   xem được” (rò rỉ bài làm của học sinh) hoặc chia sẻ từng người (không quản nổi ở quy mô
+   900 em).
+3. **Bài làm của trẻ vị thành niên** nằm trong Drive cá nhân của một giáo viên là quản trị dữ
+   liệu kém hơn hẳn so với một bucket có phân quyền.
+
+Sau khi nén, ước tính ở quy mô toàn trường còn khoảng **1,4 GB/năm** thay vì ~8,3 GB — bài
+toán dung lượng không còn là lý do phải đổi kiến trúc.
+
 ## 11b. Kiểm tra hồi quy
 
 ```bash

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Check, ClipboardCheck, ClipboardCopy, Download, ExternalLink, KeyRound, LifeBuoy, MessageSquare, MessageSquareQuote, RefreshCw, Search, Shuffle, UsersRound, X } from 'lucide-react'
 import { supabase, callFunction } from '../lib/supabase'
+import { selectIn, daysAgoISO, LOAD_WINDOWS } from '../lib/query'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, registrationStatus, todayISO } from '../utils/date'
 import { generateTempPassword, passwordChecks, validateStudentPassword } from '../utils/password'
@@ -43,34 +44,55 @@ export default function TeacherPage(){
   const [chatWith,setChatWith]=useState(null)
   const [assistants,setAssistants]=useState([])
   const [status,setStatus]=useState({})
+  // Khoảng thời gian được NẠP về máy (khác với bộ lọc "Từ ngày/Đến ngày" bên dưới,
+  // vốn chỉ lọc trong phần đã nạp). Mặc định 60 ngày là đủ cho việc theo dõi hằng
+  // ngày; cần xa hơn thì đổi ở ô ngay trên bảng.
+  const [windowDays,setWindowDays]=useState(60)
 
+  // Bảng điều khiển CHỈ nạp dữ liệu của lớp đang chọn, trong một khoảng thời gian
+  // có giới hạn. Trước đây nó nạp mọi kế hoạch mà RLS cho phép nhìn thấy — với
+  // một lớp thì không sao, nhưng giáo viên dạy nhiều lớp qua nhiều năm (và nhất là
+  // tài khoản quản trị, vốn nhìn thấy toàn trường) sẽ kéo về hàng chục nghìn dòng
+  // mỗi lần mở trang. Lớp thuộc đúng một năm học, nên lọc theo lớp đã tự khoanh
+  // luôn theo năm.
   const load=async()=>{
+    if(!context.classId){setLoading(false);return}
     setLoading(true)
-    const [{data:s},{data:enr},{data:p},{data:ta}]=await Promise.all([
-      supabase.from('profiles').select('id,mshs,full_name,created_at,must_change_password,avatar_path').eq('role','student').order('full_name'),
-      supabase.from('enrollments').select('mshs,is_active,students!inner(mshs,full_name,claimed_user_id)').eq('is_active',true),
-      supabase.from('plans').select('*').order('study_date',{ascending:false}).order('period'),
-      supabase.from('class_assistants').select('*'),
+    const since=windowDays?daysAgoISO(windowDays):null
+
+    let planQuery=supabase.from('plans').select('*').eq('class_id',context.classId)
+    if(since)planQuery=planQuery.gte('study_date',since)
+    const [{data:enr},{data:p},{data:ta}]=await Promise.all([
+      supabase.from('enrollments').select('mshs,is_active,students!inner(mshs,full_name,claimed_user_id)')
+        .eq('class_id',context.classId).eq('is_active',true),
+      planQuery.order('study_date',{ascending:false}).order('period'),
+      supabase.from('class_assistants').select('*').eq('class_id',context.classId),
     ])
-    const {data:st}=await supabase.from('plan_status').select('plan_id,progress,overdue_at,needs_recheck,auto_evaluated')
-    setStatus(Object.fromEntries((st||[]).map(x=>[x.plan_id,x])))
-    const studentList=s||[];const planList=p||[]
-    setStudents(studentList)
-    setRoster((enr||[]).map(e=>e.students).sort((a,b)=>a.full_name.localeCompare(b.full_name,'vi')))
+
+    const roll=(enr||[]).map(e=>e.students).sort((a,b)=>a.full_name.localeCompare(b.full_name,'vi'))
+    const planList=p||[]
+    const ids=planList.map(x=>x.id)
+    const uids=roll.map(x=>x.claimed_user_id).filter(Boolean)
+
+    // Vòng gọi thứ hai: tất cả đều phụ thuộc kết quả vòng một nên phải đợi, nhưng
+    // bốn truy vấn này chạy song song với nhau — tổng cộng 2 lượt đi/về, không phải 3.
+    const [s,st,r,e]=await Promise.all([
+      selectIn('profiles','id,mshs,full_name,created_at,must_change_password,avatar_path','id',uids),
+      selectIn('plan_status','plan_id,progress,overdue_at,needs_recheck,auto_evaluated','plan_id',ids),
+      selectIn('reflections','*','plan_id',ids),
+      selectIn('evidence','*','plan_id',ids),
+    ])
+
+    setStudents(s.sort((a,b)=>a.full_name.localeCompare(b.full_name,'vi')))
+    setRoster(roll)
     setPlans(planList)
     setAssistants(ta||[])
-    if(planList.length){
-      const ids=planList.map(x=>x.id)
-      const [{data:r},{data:e}]=await Promise.all([
-        supabase.from('reflections').select('*').in('plan_id',ids),
-        supabase.from('evidence').select('*').in('plan_id',ids)
-      ])
-      setReflections(Object.fromEntries((r||[]).map(x=>[x.plan_id,x])))
-      const grouped={};(e||[]).forEach(x=>(grouped[x.plan_id] ||= []).push(x));setEvidence(grouped)
-    }else{setReflections({});setEvidence({})}
+    setStatus(Object.fromEntries(st.map(x=>[x.plan_id,x])))
+    setReflections(Object.fromEntries(r.map(x=>[x.plan_id,x])))
+    const grouped={};e.forEach(x=>(grouped[x.plan_id] ||= []).push(x));setEvidence(grouped)
     setLoading(false)
   }
-  useEffect(()=>{load()},[])
+  useEffect(()=>{load()},[context.classId,windowDays])
 
   const studentMap=useMemo(()=>Object.fromEntries(students.map(s=>[s.id,s])),[students])
   const rows=useMemo(()=>{
@@ -347,6 +369,9 @@ export default function TeacherPage(){
 
     {view==='plans'&&<section className="card filters filters-wide">
       <div className="search-box"><Search size={17}/><input value={filters.search} onChange={e=>setFilters({...filters,search:e.target.value})} placeholder="Tìm tên, MSHS, môn, nhiệm vụ…"/></div>
+      <select value={windowDays} onChange={e=>setWindowDays(Number(e.target.value))}
+              title="Khoảng dữ liệu nạp từ máy chủ — nạp ít thì trang mở nhanh hơn">
+        {LOAD_WINDOWS.map(([d,label])=><option key={d} value={d}>Nạp: {label}</option>)}</select>
       <select value={filters.review} onChange={e=>setFilters({...filters,review:e.target.value})} title="Trạng thái duyệt">
         <option value="">Duyệt: tất cả</option><option>Chờ duyệt</option><option>Đã duyệt</option><option>Cần điều chỉnh</option></select>
       <select value={filters.progress} onChange={e=>setFilters({...filters,progress:e.target.value})} title="Tiến độ cập nhật">

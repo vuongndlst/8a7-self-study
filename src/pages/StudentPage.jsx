@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CalendarPlus, ChevronDown, ExternalLink, FileUp, KeyRound, MessageSquare, MessageSquareQuote, Plus, RefreshCw, Search, ShieldCheck, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase, callFunction } from '../lib/supabase'
+import { shrinkImage } from '../lib/image'
+import { selectIn } from '../lib/query'
 import { formatDate, registrationStatus, todayISO } from '../utils/date'
 import { passwordChecks, validateStudentPassword } from '../utils/password'
 import StatusBadge from '../components/StatusBadge'
@@ -45,15 +47,15 @@ export default function StudentPage(){
     setPlans(planList)
     if(planList.length){
       const ids=planList.map(x=>x.id)
-      const [{data:r},{data:e},{data:s}]=await Promise.all([
-        supabase.from('reflections').select('*').in('plan_id',ids),
-        supabase.from('evidence').select('*').in('plan_id',ids).order('created_at',{ascending:true}),
+      const [r,e,s]=await Promise.all([
+        selectIn('reflections','*','plan_id',ids),
+        selectIn('evidence','*','plan_id',ids,q=>q.order('created_at',{ascending:true})),
         // Trạng thái tiến độ do CSDL tính — giao diện không tự suy diễn để khỏi lệch.
-        supabase.from('plan_status').select('plan_id,progress,overdue_at,auto_evaluate_at').in('plan_id',ids)
+        selectIn('plan_status','plan_id,progress,overdue_at,auto_evaluate_at','plan_id',ids)
       ])
-      setReflections(Object.fromEntries((r||[]).map(x=>[x.plan_id,x])))
-      const grouped={};(e||[]).forEach(x=>{(grouped[x.plan_id] ||= []).push(x)});setEvidence(grouped)
-      setStatus(Object.fromEntries((s||[]).map(x=>[x.plan_id,x])))
+      setReflections(Object.fromEntries(r.map(x=>[x.plan_id,x])))
+      const grouped={};e.forEach(x=>{(grouped[x.plan_id] ||= []).push(x)});setEvidence(grouped)
+      setStatus(Object.fromEntries(s.map(x=>[x.plan_id,x])))
     }else{setReflections({});setEvidence({});setStatus({})}
   }
   useEffect(()=>{load()},[profile?.id])
@@ -400,8 +402,11 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
     if(form.need_help&&!form.help_note.trim()){setBusy(false);return setMsg('Hãy ghi ngắn gọn điều em cần hỗ trợ.')}
     if(link.trim()){try{new URL(link.trim())}catch{setBusy(false);return setMsg('Liên kết minh chứng chưa hợp lệ.')}}
     if(file){
-      if(file.size>5*1024*1024){setBusy(false);return setMsg('File vượt quá 5 MB.')}
-      if(!['image/jpeg','image/png','application/pdf'].includes(file.type)){setBusy(false);return setMsg('Chỉ nhận JPG, PNG hoặc PDF.')}
+      // Ảnh chụp điện thoại được nén lại trước khi lên nên cho phép nặng hơn;
+      // PDF thì tải lên nguyên trạng nên vẫn giữ mốc 5 MB.
+      const limit=file.type.startsWith('image/')?12*1024*1024:5*1024*1024
+      if(file.size>limit){setBusy(false);return setMsg(file.type.startsWith('image/')?'Ảnh vượt quá 12 MB.':'File PDF vượt quá 5 MB.')}
+      if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(file.type)){setBusy(false);return setMsg('Chỉ nhận JPG, PNG, WebP hoặc PDF.')}
     }
     // Không gửi các cột của giáo viên; trigger phía CSDL cũng chặn sẵn.
     const payload={plan_id:plan.id,student_id:plan.student_id,...form,help_note:form.need_help?form.help_note.trim():null,completed_at:new Date().toISOString()}
@@ -412,11 +417,14 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
       if(e){setBusy(false);return setMsg('Đã lưu kết quả nhưng chưa thêm được liên kết.')}
     }
     if(file){
-      const safeExt=file.type==='application/pdf'?'pdf':file.type==='image/png'?'png':'jpg'
+      // Ảnh được thu nhỏ ngay trên máy em trước khi tải lên — nhẹ hơn khoảng 6 lần
+      // mà nhìn vẫn rõ. PDF thì giữ nguyên.
+      const shrunk=await shrinkImage(file)
+      const safeExt=shrunk.type==='application/pdf'?'pdf':shrunk.type==='image/webp'?'webp':shrunk.type==='image/png'?'png':'jpg'
       const path=`${plan.student_id}/${plan.id}/${crypto.randomUUID()}.${safeExt}`
-      const {error:upErr}=await supabase.storage.from('evidence').upload(path,file,{upsert:false,contentType:file.type})
+      const {error:upErr}=await supabase.storage.from('evidence').upload(path,shrunk.blob,{upsert:false,contentType:shrunk.type})
       if(upErr){setBusy(false);return setMsg('Đã lưu kết quả nhưng upload file chưa thành công.')}
-      const {error:e}=await supabase.from('evidence').insert({plan_id:plan.id,student_id:plan.student_id,kind:file.type.startsWith('image/')?'image':'file',storage_path:path,display_name:file.name})
+      const {error:e}=await supabase.from('evidence').insert({plan_id:plan.id,student_id:plan.student_id,kind:file.type.startsWith('image/')?'image':'file',storage_path:path,display_name:shrunk.name})
       if(e){await supabase.storage.from('evidence').remove([path]);setBusy(false);return setMsg('Không thể ghi nhận file minh chứng.')}
     }
     if(note.trim()){
@@ -481,8 +489,9 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
         <label>Mô tả kết quả bằng chữ</label>
         <textarea rows="2" maxLength={2000} value={note} onChange={e=>setNote(e.target.value)}
                   placeholder="Ví dụ: Em đã làm xong bài 5–10 trang 24 trong vở Toán, có tự dò lại đáp án."/>
-        <label>Upload ảnh/PDF (≤ 5 MB)</label>
-        <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/>
+        <label>Upload ảnh/PDF (ảnh ≤ 12 MB · PDF ≤ 5 MB)</label>
+        <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/>
+        {file?.type?.startsWith('image/')&&<small className="muted-text">Ảnh sẽ được tự động thu nhỏ trước khi gửi để tiết kiệm dung lượng — chất lượng vẫn đủ rõ để thầy cô xem.</small>}
         <label>Liên kết sản phẩm</label>
         <input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://…"/>
       </>}

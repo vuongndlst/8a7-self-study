@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { LifeBuoy, MessageSquare, RefreshCw, Search, ShieldCheck, UserX } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { selectIn, daysAgoISO } from '../lib/query'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, registrationStatus, todayISO } from '../utils/date'
 import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
@@ -47,23 +48,32 @@ export default function TaPage() {
     // Mỗi truy vấn chỉ chạy khi quyền tương ứng được bật. Không phải để "giấu"
     // — RLS đằng nào cũng chặn — mà để khỏi gọi thừa và khỏi hiểu nhầm ô trống
     // là "lớp không có dữ liệu" trong khi thật ra là "em chưa được cấp quyền".
-    const [{ data: p }, { data: h }, { data: pr }] = await Promise.all([
+    // Chỉ nạp lớp em đang trợ giảng, trong 60 ngày gần nhất. Trợ giảng không có
+    // việc gì phải kéo về dữ liệu của những lớp khác hay của các năm trước.
+    const since = daysAgoISO(60)
+    const [{ data: p }, { data: h }, { data: enr }] = await Promise.all([
       assistant?.can_view_plans
-        ? supabase.from('plans').select('*').order('study_date', { ascending: false }).order('period')
+        ? supabase.from('plans').select('*').eq('class_id', assistant.class_id).gte('study_date', since)
+            .order('study_date', { ascending: false }).order('period')
         : Promise.resolve({ data: [] }),
       assistant?.can_view_help
         ? supabase.from('help_requests').select('*').eq('help_resolved', false).order('study_date', { ascending: false })
         : Promise.resolve({ data: [] }),
-      supabase.from('profiles').select('id,full_name,mshs,avatar_path').eq('role', 'student'),
+      supabase.from('enrollments').select('students!inner(claimed_user_id)')
+        .eq('class_id', assistant.class_id).eq('is_active', true),
     ])
     setPlans(p ?? [])
     setHelp(h ?? [])
-    setPeople(Object.fromEntries((pr ?? []).map((x) => [x.id, x])))
 
-    if (assistant?.can_view_reflections && (p ?? []).length) {
-      const { data: r } = await supabase.from('reflections').select('*').in('plan_id', p.map((x) => x.id))
-      setReflections(Object.fromEntries((r ?? []).map((x) => [x.plan_id, x])))
-    } else setReflections({})
+    const uids = (enr ?? []).map((e) => e.students?.claimed_user_id).filter(Boolean)
+    const [pr, r] = await Promise.all([
+      selectIn('profiles', 'id,full_name,mshs,avatar_path', 'id', uids),
+      assistant?.can_view_reflections && (p ?? []).length
+        ? selectIn('reflections', '*', 'plan_id', p.map((x) => x.id))
+        : Promise.resolve([]),
+    ])
+    setPeople(Object.fromEntries(pr.map((x) => [x.id, x])))
+    setReflections(Object.fromEntries(r.map((x) => [x.plan_id, x])))
     setLoading(false)
   }
 
