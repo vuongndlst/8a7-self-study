@@ -17,6 +17,12 @@ import { ClassAnalytics, StudentAnalytics } from '../components/Analytics'
 
 const PAGE_SIZE = 25
 
+// Bộ lọc rỗng. Mỗi ô ở hộp việc cần xử lý đặt LẠI toàn bộ rồi mới bật điều kiện
+// của mình — nếu chỉ chồng thêm, thầy cô bấm "Chờ duyệt" xong bấm "Cần hỗ trợ"
+// sẽ ra giao của hai điều kiện và tưởng là hệ thống báo sai số.
+const CLEAR = { from:'', to:'', student:'', subject:'', completion:'', search:'', review:'',
+                progress:'', period:'', device:'', rating:'', help:'', recheck:'' }
+
 const tomorrowISO = () => {
   const d = new Date(todayISO() + 'T00:00:00Z')
   d.setUTCDate(d.getUTCDate() + 1)
@@ -32,7 +38,7 @@ export default function TeacherPage(){
   const [evidence,setEvidence]=useState({})
   const [loading,setLoading]=useState(true)
   const [view,setView]=useState('plans')
-  const [filters,setFilters]=useState({from:'',to:'',student:'',subject:'',completion:'',search:'',review:'',progress:'',period:'',device:'',rating:''})
+  const [filters,setFilters]=useState({...CLEAR})
   const [selectedPlans,setSelectedPlans]=useState(new Set())
   const [bulkAction,setBulkAction]=useState(null)
   const [sortBy,setSortBy]=useState('date_desc')
@@ -113,6 +119,10 @@ export default function TeacherPage(){
       if(filters.rating==='da_cham'&&!(r&&r.rating!=null&&!r.auto_evaluated))return false
       if(filters.rating==='sao_thap'&&!(r&&r.rating!=null&&r.rating<=2))return false
       if(filters.rating==='tu_dong'&&!r?.auto_evaluated)return false
+      // Em đang giơ tay xin hỗ trợ và thầy cô chưa đánh dấu là đã giải quyết.
+      if(filters.help==='can_ho_tro'&&!(r?.need_help&&!r.help_resolved))return false
+      // Em nộp kết quả SAU khi đã bị chấm — điểm cũ có thể không còn đúng nữa.
+      if(filters.recheck==='co'&&!status[p.id]?.needs_recheck)return false
       const q=filters.search.trim().toLowerCase()
       if(q&&!`${s?.full_name||''} ${s?.mshs||''} ${p.task} ${p.subject}`.toLowerCase().includes(q))return false
       return true
@@ -149,25 +159,23 @@ export default function TeacherPage(){
   const totalPages=Math.max(1,Math.ceil(rows.length/PAGE_SIZE))
   const pageRows=useMemo(()=>rows.slice((page-1)*PAGE_SIZE,page*PAGE_SIZE),[rows,page])
 
+  // Số liệu tổng quan tính trên TOÀN BỘ khoảng đang nạp, không theo bộ lọc.
+  // Bộ lọc nằm ở tab "Theo kế hoạch"; nếu để nó chi phối cả mấy ô ở tab "Phân
+  // tích" thì thầy cô mở tab kia ra sẽ thấy "Lượt đăng ký: 1" mà không hiểu tại
+  // sao — cái đang thu hẹp nó lại không nhìn thấy được từ đây.
   const stats=useMemo(()=>{
-    const total=rows.length
+    const total=plans.length
     return{
       total,
-      ontime:rows.filter(p=>registrationStatus(p.study_date,p.created_at)==='Đúng hạn').length,
-      done:rows.filter(p=>reflections[p.id]?.completion_status==='Hoàn thành').length,
-      help:rows.filter(p=>reflections[p.id]?.need_help&&!reflections[p.id]?.help_resolved).length,
-      pendingDevices:rows.filter(p=>p.use_device&&p.device_status==='Chờ duyệt').length,
-      pendingReview:rows.filter(p=>p.review_status==='Chờ duyệt').length,
-      needsRevision:rows.filter(p=>p.review_status==='Cần điều chỉnh').length,
-      lowRated:rows.filter(p=>(reflections[p.id]?.rating??5)<=2).length,
-      unrated:rows.filter(p=>reflections[p.id]&&reflections[p.id].rating==null).length,
-      rated:rows.filter(p=>{const r=reflections[p.id];return r&&r.rating!=null&&!r.auto_evaluated}).length,
+      ontime:plans.filter(p=>registrationStatus(p.study_date,p.created_at)==='Đúng hạn').length,
+      done:plans.filter(p=>reflections[p.id]?.completion_status==='Hoàn thành').length,
+      rated:plans.filter(p=>{const r=reflections[p.id];return r&&r.rating!=null&&!r.auto_evaluated}).length,
       avg:(()=>{
-        const v=rows.map(p=>reflections[p.id]?.rating).filter(x=>x!=null)
+        const v=plans.map(p=>reflections[p.id]?.rating).filter(x=>x!=null)
         return v.length?(v.reduce((a,b)=>a+b,0)/v.length):null
       })(),
     }
-  },[rows,reflections])
+  },[plans,reflections])
 
   // Một dòng cho MỖI học sinh trong lớp — kể cả em chưa lập kế hoạch nào,
   // để giáo viên luôn đặt lại được mật khẩu.
@@ -215,9 +223,19 @@ export default function TeacherPage(){
   const withPending=perStudent.filter(r=>r.pending>0)
   const mustChangeList=perStudent.filter(r=>r.mustChange)
   // Trạng thái do CSDL tính (hạn 48h / tự đánh giá 120h).
-  const overdueCount=rows.filter(p=>status[p.id]?.progress==='Trễ hạn cập nhật').length
-  const autoRatedCount=rows.filter(p=>status[p.id]?.auto_evaluated).length
-  const recheckCount=rows.filter(p=>status[p.id]?.needs_recheck).length
+  // HỘP VIỆC CẦN XỬ LÝ đếm trên TOÀN BỘ dữ liệu đã nạp, cố tình KHÔNG theo bộ lọc.
+  // Nếu đếm theo `rows` (đã lọc) thì bấm "Chờ duyệt" xong mọi ô còn lại tụt về 0,
+  // và thầy cô tưởng đã hết việc trong khi chỉ là đang nhìn qua một khe hẹp.
+  // Số liệu mô tả ở tab Phân tích thì ngược lại — chúng PHẢI theo bộ lọc.
+  const inbox=useMemo(()=>({
+    pendingReview:plans.filter(p=>p.review_status==='Chờ duyệt').length,
+    needsRevision:plans.filter(p=>p.review_status==='Cần điều chỉnh').length,
+    overdue:      plans.filter(p=>status[p.id]?.progress==='Trễ hạn cập nhật').length,
+    unrated:      plans.filter(p=>reflections[p.id]&&reflections[p.id].rating==null).length,
+    help:         plans.filter(p=>reflections[p.id]?.need_help&&!reflections[p.id]?.help_resolved).length,
+    autoRated:    plans.filter(p=>status[p.id]?.auto_evaluated).length,
+    recheck:      plans.filter(p=>status[p.id]?.needs_recheck).length,
+  }),[plans,status,reflections])
 
   const selectedRows=perStudent.filter(r=>selected.has(r.mshs)&&r.hasAccount)
   const toggle=(mshs)=>setSelected(prev=>{const n=new Set(prev);n.has(mshs)?n.delete(mshs):n.add(mshs);return n})
@@ -277,56 +295,39 @@ export default function TeacherPage(){
       </div>
     </section>
 
-    {/* Hàng đầu là VIỆC CẦN XỬ LÝ — bấm vào là lọc thẳng xuống bảng bên dưới. */}
+    {/* HỘP VIỆC CẦN XỬ LÝ — và chỉ có thế.
+        Trước đây chỗ này là 11 ô số liệu cộng một thẻ "Cần chú ý" 7 dòng: 18 con
+        số phải đọc trước khi tới được dữ liệu, phần lớn trùng nhau (trễ hạn, chờ
+        chấm sao, tài khoản HS đều xuất hiện hai lần) và phần lớn không bấm được.
+        Giờ giữ đúng những mục THẦY CÔ PHẢI LÀM GÌ ĐÓ, mỗi mục bấm là lọc ngay.
+        Số liệu mô tả chuyển sang tab Phân tích, tài khoản chuyển sang tab Theo
+        học sinh — đúng chỗ người ta đi tìm chúng. */}
     <section className="stats-grid inbox-grid">
-      <Stat label="Chờ duyệt" value={stats.pendingReview} alert={stats.pendingReview>0}
-            onClick={()=>{setView('plans');setFilters({...filters,review:'Chờ duyệt',progress:''})}}
+      <Stat label="Chờ duyệt" value={inbox.pendingReview} alert={inbox.pendingReview>0}
+            onClick={()=>{setView('plans');setFilters({...CLEAR,review:'Chờ duyệt'})}}
             active={filters.review==='Chờ duyệt'}/>
-      <Stat label="Cần điều chỉnh" value={stats.needsRevision} alert={stats.needsRevision>0}
-            onClick={()=>{setView('plans');setFilters({...filters,review:'Cần điều chỉnh',progress:''})}}
+      <Stat label="Cần điều chỉnh" value={inbox.needsRevision} alert={inbox.needsRevision>0}
+            onClick={()=>{setView('plans');setFilters({...CLEAR,review:'Cần điều chỉnh'})}}
             active={filters.review==='Cần điều chỉnh'}/>
-      <Stat label="Trễ hạn cập nhật" value={overdueCount} alert={overdueCount>0}
-            onClick={()=>{setView('plans');setFilters({...filters,review:'',progress:'Trễ hạn cập nhật'})}}
+      <Stat label="Trễ hạn cập nhật" value={inbox.overdue} alert={inbox.overdue>0}
+            onClick={()=>{setView('plans');setFilters({...CLEAR,progress:'Trễ hạn cập nhật'})}}
             active={filters.progress==='Trễ hạn cập nhật'}/>
       {/* Bấm vào là lọc ĐÚNG những tiết em đã nộp kết quả mà chưa được chấm sao,
           không phải mọi tiết đã hoàn thành. */}
-      <Stat label="Chờ chấm sao" value={stats.unrated} alert={stats.unrated>0}
-            onClick={()=>{setView('plans');setFilters({...filters,review:'',progress:'',rating:'cho_cham'})}}
+      <Stat label="Chờ chấm sao" value={inbox.unrated} alert={inbox.unrated>0}
+            onClick={()=>{setView('plans');setFilters({...CLEAR,rating:'cho_cham'})}}
             active={filters.rating==='cho_cham'}/>
-      <Stat label="Cần hỗ trợ" value={stats.help} alert={stats.help>0}/>
-      <Stat label="Đã hoàn thành" value={stats.total?`${Math.round(stats.done/stats.total*100)}%`:'0%'}/>
-    </section>
-
-    <section className="stats-grid secondary-grid">
-      <Stat label="Tài khoản HS" value={`${claimed}/${rosterTotal}`}/>
-      <Stat label="Lượt đăng ký" value={stats.total}/>
-      <Stat label="Đã chấm sao" value={stats.rated}
-            onClick={()=>{setView('plans');setFilters({...filters,review:'',progress:'',rating:'da_cham'})}}
-            active={filters.rating==='da_cham'}/>
-      <Stat label="Đúng hạn" value={stats.total?`${Math.round(stats.ontime/stats.total*100)}%`:'0%'}/>
-      <Stat label="Điểm trung bình" value={stats.avg!=null?`${stats.avg.toFixed(1)}/5`:'—'}/>
-    </section>
-
-    <section className="teacher-meta-grid">
-      <article className="card roster-card">
-        <div className="roster-head"><div><span className="eyebrow">TÀI KHOẢN HỌC SINH</span><h3>{claimed} / {rosterTotal} đã đăng ký</h3></div><UsersRound size={24}/></div>
-        <div className="roster-progress"><span style={{width:`${rosterTotal?Math.round(claimed/rosterTotal*100):0}%`}}/></div>
-        <div className="roster-unclaimed">{unclaimed.length?<>Chưa đăng ký: <strong>{unclaimed.map(x=>x.full_name).join(' · ')}</strong></>:'✓ Tất cả học sinh đã tạo tài khoản.'}</div>
-        <button className="button ghost full" onClick={()=>setView('students')}><KeyRound size={16}/> Quản lý tài khoản &amp; đặt lại mật khẩu</button>
-      </article>
-      <article className="card insight-card">
-        <span className="eyebrow"><AlertTriangle size={13}/> CẦN CHÚ Ý</span>
-        <div className="insight-list">
-          <div className="insight-row"><span>Chưa lập kế hoạch cho ngày mai</span><strong className={noPlanTomorrow.length?'help-flag':''}>{noPlanTomorrow.length}</strong></div>
-          <div className="insight-row"><span>Có tiết chưa cập nhật kết quả</span><strong className={withPending.length?'help-flag':''}>{withPending.length}</strong></div>
-          <div className="insight-row"><span>Trễ hạn cập nhật (quá 48 giờ)</span><strong className={overdueCount?'alarm-red':''}>{overdueCount}</strong></div>
-          <div className="insight-row"><span>Hệ thống đã tự đánh giá 1 sao</span><strong className={autoRatedCount?'alarm-red':''}>{autoRatedCount}</strong></div>
-          <div className="insight-row"><span>Học sinh bổ sung muộn — cần xem lại</span><strong className={recheckCount?'help-flag':''}>{recheckCount}</strong></div>
-          <div className="insight-row"><span>Tiết chờ thầy cô chấm sao</span><strong className={stats.unrated?'help-flag':''}>{stats.unrated}</strong></div>
-          <div className="insight-row"><span>Đang chờ tự đặt lại mật khẩu</span><strong>{mustChangeList.length}</strong></div>
-        </div>
-        {noPlanTomorrow.length>0&&<p className="muted-text small">{noPlanTomorrow.slice(0,8).map(r=>r.name).join(' · ')}{noPlanTomorrow.length>8?` … +${noPlanTomorrow.length-8}`:''}</p>}
-      </article>
+      <Stat label="Cần hỗ trợ" value={inbox.help} alert={inbox.help>0}
+            onClick={()=>{setView('plans');setFilters({...CLEAR,help:'can_ho_tro'})}}
+            active={filters.help==='can_ho_tro'}/>
+      <Stat label="Hệ thống tự chấm" value={inbox.autoRated} alert={inbox.autoRated>0}
+            onClick={()=>{setView('plans');setFilters({...CLEAR,rating:'tu_dong'})}}
+            active={filters.rating==='tu_dong'}/>
+      <Stat label="Bổ sung muộn" value={inbox.recheck} alert={inbox.recheck>0}
+            onClick={()=>{setView('plans');setFilters({...CLEAR,recheck:'co'})}}
+            active={filters.recheck==='co'}/>
+      <Stat label="Chưa lập KH ngày mai" value={noPlanTomorrow.length} alert={noPlanTomorrow.length>0}
+            onClick={()=>setView('missing')} active={view==='missing'}/>
     </section>
 
     <div className="segmented view-switch">
@@ -342,29 +343,47 @@ export default function TeacherPage(){
     {view==='schedule'&&<ClassScheduleSettings classId={context.classId} className={context.className}/>}
     {view==='missing'&&<MissingRegistrations classId={context.classId}/>}
     {view==='roster'&&<RosterPanel classId={context.classId} className={context.className} yearName={context.yearName}/>}
-    {view==='analytics'&&<ClassAnalytics classId={context.classId} className={context.className}/>}
+
+    {/* Số liệu MÔ TẢ (không phải việc cần làm) sống ở tab Phân tích. */}
+    {view==='analytics'&&<>
+      <section className="stats-grid secondary-grid">
+        <Stat label="Lượt đăng ký" value={stats.total}/>
+        <Stat label="Đã hoàn thành" value={stats.total?`${Math.round(stats.done/stats.total*100)}%`:'0%'}/>
+        <Stat label="Đã chấm sao" value={stats.rated}
+              onClick={()=>{setView('plans');setFilters({...CLEAR,rating:'da_cham'})}}
+              active={filters.rating==='da_cham'}/>
+        <Stat label="Đăng ký đúng hạn" value={stats.total?`${Math.round(stats.ontime/stats.total*100)}%`:'0%'}/>
+        <Stat label="Điểm trung bình" value={stats.avg!=null?`${stats.avg.toFixed(1)}/5`:'—'}/>
+      </section>
+      <p className="muted-text small">Năm ô trên tính trên toàn bộ khoảng đang nạp của lớp {context.className} (xem ô “Nạp” ở tab <strong>Theo kế hoạch</strong>), không phụ thuộc bộ lọc. Các biểu đồ bên dưới lấy thẳng từ cơ sở dữ liệu theo khoảng ngày riêng của chúng.</p>
+      <ClassAnalytics classId={context.classId} className={context.className}/>
+    </>}
 
     {view==='assistants'&&<AssistantsPanel
       classId={context.classId} perStudent={perStudent} assistants={assistants} onChanged={load}/>}
 
     {view==='plans'&&<div className="quick-views">
       <span className="muted-text">Xem nhanh:</span>
-      <button className={`chip-btn ${filters.from===todayISO()&&filters.to===todayISO()?'on':''}`}
-        onClick={()=>setFilters({...filters,from:todayISO(),to:todayISO(),review:'',progress:''})}>Hôm nay</button>
-      <button className={`chip-btn ${filters.from===tomorrowISO()&&filters.to===tomorrowISO()?'on':''}`}
-        onClick={()=>setFilters({...filters,from:tomorrowISO(),to:tomorrowISO(),review:'',progress:''})}>Ngày mai</button>
-      <button className={`chip-btn ${filters.device==='co'&&filters.review==='Chờ duyệt'?'on':''}`}
-        onClick={()=>setFilters({...filters,device:'co',review:'Chờ duyệt',progress:''})}>Thiết bị chờ duyệt</button>
-      <button className={`chip-btn ${filters.device==='co'?'on':''}`}
-        onClick={()=>setFilters({...filters,device:'co',review:'',progress:''})}>Có dùng thiết bị</button>
-      <button className={`chip-btn ${filters.progress==='Trễ hạn cập nhật'?'on':''}`}
-        onClick={()=>setFilters({...filters,progress:'Trễ hạn cập nhật',review:'',device:'',rating:''})}>Trễ hạn cập nhật</button>
-      <button className={`chip-btn ${filters.rating==='cho_cham'?'on':''}`}
-        onClick={()=>setFilters({...filters,rating:'cho_cham',review:'',progress:'',device:''})}>Chờ chấm sao</button>
-      <button className={`chip-btn ${filters.rating==='da_cham'?'on':''}`}
-        onClick={()=>setFilters({...filters,rating:'da_cham',review:'',progress:'',device:''})}>Đã chấm</button>
-      <button className={`chip-btn ${filters.rating==='sao_thap'?'on':''}`}
-        onClick={()=>setFilters({...filters,rating:'sao_thap',review:'',progress:'',device:''})}>Bị 1–2 sao</button>
+      {/* Mỗi chip đặt lại bộ lọc rồi bật đúng điều kiện của nó — bấm chip này rồi
+          chip kia không cộng dồn thành giao của hai điều kiện. */}
+      <QuickChip on={filters.from===todayISO()&&filters.to===todayISO()}
+        set={setFilters} f={{from:todayISO(),to:todayISO()}} label="Hôm nay"/>
+      <QuickChip on={filters.from===tomorrowISO()&&filters.to===tomorrowISO()}
+        set={setFilters} f={{from:tomorrowISO(),to:tomorrowISO()}} label="Ngày mai"/>
+      <QuickChip on={filters.device==='co'&&filters.review==='Chờ duyệt'}
+        set={setFilters} f={{device:'co',review:'Chờ duyệt'}} label="Thiết bị chờ duyệt"/>
+      <QuickChip on={filters.device==='co'&&!filters.review}
+        set={setFilters} f={{device:'co'}} label="Có dùng thiết bị"/>
+      <QuickChip on={filters.progress==='Trễ hạn cập nhật'}
+        set={setFilters} f={{progress:'Trễ hạn cập nhật'}} label="Trễ hạn cập nhật"/>
+      <QuickChip on={filters.help==='can_ho_tro'}
+        set={setFilters} f={{help:'can_ho_tro'}} label="Đang cần hỗ trợ"/>
+      <QuickChip on={filters.rating==='cho_cham'}
+        set={setFilters} f={{rating:'cho_cham'}} label="Chờ chấm sao"/>
+      <QuickChip on={filters.rating==='da_cham'}
+        set={setFilters} f={{rating:'da_cham'}} label="Đã chấm"/>
+      <QuickChip on={filters.rating==='sao_thap'}
+        set={setFilters} f={{rating:'sao_thap'}} label="Bị 1–2 sao"/>
     </div>}
 
     {view==='plans'&&<section className="card filters filters-wide">
@@ -390,12 +409,16 @@ export default function TeacherPage(){
         <option value="da_cham">Thầy cô đã chấm</option>
         <option value="sao_thap">Bị 1–2 sao</option>
         <option value="tu_dong">Hệ thống tự đánh giá</option></select>
+      <select value={filters.help} onChange={e=>setFilters({...filters,help:e.target.value})} title="Nhu cầu hỗ trợ">
+        <option value="">Hỗ trợ: tất cả</option><option value="can_ho_tro">Đang cần hỗ trợ</option></select>
+      <select value={filters.recheck} onChange={e=>setFilters({...filters,recheck:e.target.value})} title="Học sinh bổ sung sau khi đã chấm">
+        <option value="">Bổ sung muộn: tất cả</option><option value="co">Cần chấm lại</option></select>
       <select value={sortBy} onChange={e=>setSortBy(e.target.value)} title="Sắp xếp">
         <option value="date_desc">Ngày học: mới nhất</option><option value="date_asc">Ngày học: cũ nhất</option>
         <option value="created_desc">Đăng ký: mới nhất</option><option value="created_asc">Đăng ký: cũ nhất</option>
         <option value="student_asc">Học sinh A–Z</option><option value="student_desc">Học sinh Z–A</option></select>
-      {(filters.review||filters.progress||filters.period||filters.device||filters.rating||filters.subject||filters.student||filters.from||filters.to||filters.search)&&
-        <button className="button ghost" onClick={()=>setFilters({from:'',to:'',student:'',subject:'',completion:'',search:'',review:'',progress:'',period:'',device:'',rating:''})}>Xóa bộ lọc</button>}
+      {Object.values(filters).some(Boolean)&&
+        <button className="button ghost" onClick={()=>setFilters({...CLEAR})}>Xóa bộ lọc</button>}
     </section>}
 
     {view==='plans'&&<div className={`bulk-bar sticky ${selectedList.length?'on':''}`}>
@@ -416,6 +439,18 @@ export default function TeacherPage(){
         </>}
       </div>
     </div>}
+
+    {/* Tình trạng tài khoản thuộc về tab này, không phải trang đầu. */}
+    {view==='students'&&<article className="card roster-card">
+      <div className="roster-head"><div><span className="eyebrow">TÀI KHOẢN HỌC SINH</span><h3>{claimed} / {rosterTotal} đã đăng ký</h3></div><UsersRound size={24}/></div>
+      <div className="roster-progress"><span style={{width:`${rosterTotal?Math.round(claimed/rosterTotal*100):0}%`}}/></div>
+      <div className="roster-unclaimed">{unclaimed.length
+        ? <>Chưa đăng ký: <strong>{unclaimed.map(x=>x.full_name).join(' · ')}</strong></>
+        : '✓ Tất cả học sinh đã tạo tài khoản.'}</div>
+      {mustChangeList.length>0&&<div className="roster-unclaimed">
+        Đang chờ tự đặt lại mật khẩu: <strong>{mustChangeList.length}</strong> em
+      </div>}
+    </article>}
 
     {view==='students'&&<section className="card bulk-bar">
       <div>
@@ -603,9 +638,20 @@ function downloadCsv(lines,filename){
 }
 
 function Stat({label,value,alert,onClick,active}){
-  const cls=`stat-card ${alert?'alert':''} ${onClick?'clickable':''} ${active?'active':''}`
+  // Ô bằng 0 thì làm mờ đi: hộp 8 ô mà 6 ô rỗng phải đọc ra là "gần như không
+  // còn việc gì", chứ không phải 8 con số ngang hàng nhau.
+  const zero=value===0||value==='0'||value==='0%'
+  const cls=`stat-card ${alert?'alert':''} ${zero?'zero':''} ${onClick?'clickable':''} ${active?'active':''}`
   if(!onClick)return <div className={cls}><span>{label}</span><strong>{value}</strong></div>
-  return <button type="button" className={cls} onClick={onClick}><span>{label}</span><strong>{value}</strong></button>
+  return <button type="button" className={cls} onClick={onClick} aria-pressed={!!active}>
+    <span>{label}</span><strong>{value}</strong></button>
+}
+
+// Chip xem nhanh: luôn đặt lại toàn bộ bộ lọc rồi mới bật điều kiện của mình.
+// Bấm lần nữa vào chip đang bật thì tắt, quay về xem tất cả.
+function QuickChip({on,set,f,label}){
+  return <button type="button" className={`chip-btn ${on?'on':''}`}
+    onClick={()=>set(on?{...CLEAR}:{...CLEAR,...f})} aria-pressed={on}>{label}</button>
 }
 
 // Đặt lại mật khẩu cho 1 hoặc nhiều học sinh. Mật khẩu tạm sinh tự động và chỉ

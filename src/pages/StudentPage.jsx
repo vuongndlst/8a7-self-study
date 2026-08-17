@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CalendarPlus, ChevronDown, ExternalLink, FileUp, KeyRound, MessageSquare, MessageSquareQuote, Plus, RefreshCw, Search, ShieldCheck, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase, callFunction } from '../lib/supabase'
@@ -78,18 +78,33 @@ export default function StudentPage(){
   // nên tách hẳn ra một mục riêng ở trên thay vì để lẫn trong danh sách dài.
   const todo=useMemo(()=>past.filter(s=>s.tasks.some(t=>!reflections[t.id])),[past,reflections])
   const todoKeys=useMemo(()=>new Set(todo.map(s=>s.key)),[todo])
-  const onTimeCount=plans.filter(p=>registrationStatus(p.study_date,p.created_at)==='Đúng hạn').length
-  const completedCount=Object.values(reflections).filter(r=>r.completion_status==='Hoàn thành').length
-  const onTimeRate=plans.length?Math.round(onTimeCount/plans.length*100):0
   // Nhiệm vụ (không phải buổi) đã qua mà chưa cập nhật kết quả.
   const pendingReflections=past.reduce((n,s)=>n+s.tasks.filter(t=>!reflections[t.id]).length,0)
   const newComments=Object.values(reflections).filter(r=>r.teacher_comment).length
-  const rated=Object.values(reflections).filter(r=>r.rating!=null)
-  const avgRating=rated.length?(rated.reduce((s,r)=>s+r.rating,0)/rated.length).toFixed(1):null
   // Tiết bị chấm 1–2 sao mà em chưa viết phản hồi điều chỉnh.
   const needsAck=plans.filter(p=>{const r=reflections[p.id];return r?.rating!=null&&r.rating<=2&&!r.student_ack_at})
   const overdue=plans.filter(p=>status[p.id]?.progress==='Trễ hạn cập nhật')
   const autoRated=plans.filter(p=>status[p.id]?.progress==='Hệ thống tự đánh giá')
+
+  // Bấm vào thẻ việc cần làm thì lọc danh sách VÀ cuộn xuống đúng chỗ — nếu chỉ
+  // đổi bộ lọc mà không cuộn, em bấm xong tưởng như không có gì xảy ra.
+  const listRef=useRef(null)
+  const jumpTo=(f)=>{
+    setFilter(filter===f?'tat_ca':f)
+    requestAnimationFrame(()=>listRef.current?.scrollIntoView({behavior:'smooth',block:'start'}))
+  }
+
+  // Chỉ dựng thẻ cho việc CÒN TỒN. Không việc gì thì cả dải biến mất.
+  const todoCards=[
+    {f:'can_phan_hoi',n:needsAck.length,   tone:'danger', label:'tiết cần em viết phản hồi',
+     hint:'Bị chấm 1–2 sao. Đọc nhận xét rồi ghi một dòng cho biết em sẽ điều chỉnh thế nào.'},
+    {f:'tre_han',     n:overdue.length,    tone:'danger', label:'tiết đã quá hạn cập nhật',
+     hint:'Quá 5 ngày là hệ thống tự ghi nhận 1 sao. Em bổ sung sớm nhé.'},
+    {f:'chua_ket_qua',n:pendingReflections-overdue.length, tone:'warn', label:'tiết chưa ghi kết quả',
+     hint:'Buổi đã qua rồi mà em chưa cập nhật em làm được tới đâu.'},
+    {f:'tu_dong',     n:autoRated.length,  tone:'warn',   label:'tiết hệ thống tự chấm',
+     hint:'Em vẫn bổ sung được kết quả — thầy cô sẽ xem lại và chấm lại.'},
+  ].filter(c=>c.n>0)
 
   // Danh sách chính: lọc + sắp xếp + phân trang, thay cho hai khối cứng cũ.
   const filtered=useMemo(()=>{
@@ -99,6 +114,8 @@ export default function StudentPage(){
       if(filter==='chua_ket_qua'&&!todoKeys.has(s.key))return false
       if(filter==='da_xong'&&!(s.study_date<todayISO()&&s.tasks.every(t=>reflections[t.id])))return false
       if(filter==='can_phan_hoi'&&!s.tasks.some(t=>{const r=reflections[t.id];return r?.rating!=null&&r.rating<=2&&!r.student_ack_at}))return false
+      if(filter==='tre_han'&&!s.tasks.some(t=>status[t.id]?.progress==='Trễ hạn cập nhật'))return false
+      if(filter==='tu_dong'&&!s.tasks.some(t=>status[t.id]?.progress==='Hệ thống tự đánh giá'))return false
       if(q&&!s.tasks.some(t=>`${t.subject} ${t.subject_other||''} ${t.task} ${t.goal||''}`.toLowerCase().includes(q)))return false
       return true
     })
@@ -112,7 +129,7 @@ export default function StudentPage(){
       },
     }[sortBy]
     return [...list].sort(cmp)
-  },[sessions,filter,sortBy,search,reflections,todoKeys])
+  },[sessions,filter,sortBy,search,reflections,todoKeys,status])
 
   const totalPages=Math.max(1,Math.ceil(filtered.length/SESSIONS_PER_PAGE))
   const pageSessions=useMemo(()=>filtered.slice((page-1)*SESSIONS_PER_PAGE,page*SESSIONS_PER_PAGE),[filtered,page])
@@ -145,40 +162,27 @@ export default function StudentPage(){
       </div>
     </section>
 
-    <section className="student-summary">
-      <Stat label="Buổi sắp tới" value={upcoming.length}/>
-      <Stat label="Đúng hạn" value={`${onTimeRate}%`}/>
-      <Stat label="Nhiệm vụ hoàn thành" value={completedCount}/>
-      <Stat label="Điểm trung bình" value={avgRating?`${avgRating}/5`:'—'}/>
-    </section>
+    {/* Việc cần làm — mỗi thẻ bấm vào là lọc thẳng xuống danh sách bên dưới.
+        Trước đây chỗ này là 4 ô số liệu (trùng với mục "Số liệu của em" ở cuối
+        trang, mà lại lệch số vì tính theo hai cách khác nhau) cộng 5 dòng cảnh
+        báo dài. Em đọc xong vẫn phải tự đi tìm thẻ nào bị vấn đề. Giờ chỉ hiện
+        đúng việc còn tồn, và hiện dưới dạng nút bấm được. */}
+    {todoCards.length>0&&<section className="todo-bar">
+      {todoCards.map(c=><button key={c.f} type="button" className={`todo-card ${c.tone} ${filter===c.f?'active':''}`}
+        onClick={()=>jumpTo(c.f)}>
+        <strong>{c.n}</strong>
+        <span>{c.label}</span>
+        <small>{c.hint}</small>
+      </button>)}
+    </section>}
 
-    {needsAck.length>0&&<div className="notice danger"><AlertTriangle size={18}/><span>
-      Có <strong>{needsAck.length} tiết</strong> bị đánh giá thấp và em <strong>chưa viết phản hồi</strong>. Mở thẻ có viền đỏ/vàng bên dưới, đọc nhận xét rồi ghi một dòng cho biết em sẽ điều chỉnh thế nào.
-    </span></div>}
-    {overdue.length>0&&<div className="notice danger"><AlertTriangle size={18}/><span>
-      <strong>{overdue.length} tiết đã quá hạn cập nhật kết quả.</strong> Nếu để quá 5 ngày, hệ thống sẽ tự ghi nhận 1 sao. Em bổ sung sớm giúp thầy cô theo dõi đúng tiến độ nhé.
-    </span></div>}
-    {autoRated.length>0&&<div className="notice warning"><AlertTriangle size={18}/><span>
-      <strong>{autoRated.length} tiết được hệ thống tự đánh giá</strong> do quá hạn cập nhật. Em vẫn có thể bổ sung kết quả — thầy cô sẽ xem lại và chấm lại.
-    </span></div>}
-    {pendingReflections>0&&overdue.length===0&&<div className="notice warning"><ShieldCheck size={18}/><span>Em còn <strong>{pendingReflections} tiết</strong> đã qua mà chưa cập nhật kết quả. Mở thẻ ở mục “Lịch sử gần đây” để bổ sung.</span></div>}
     {newComments>0&&<div className="notice"><MessageSquareQuote size={18}/><span>Giáo viên đã nhận xét <strong>{newComments}</strong> lần phản tư của em.</span></div>}
     {message&&<div className="notice"><ShieldCheck size={18}/><span>{message}</span></div>}
     {showForm&&<SessionRegister
       onCancel={()=>setShowForm(false)}
       onDone={()=>{setShowForm(false);setMessage('✓ Đã đăng ký buổi tự học.');load()}}/>}
 
-    {/* Việc cần làm ngay đứng riêng ở trên. Không trộn vào danh sách chung vì
-        đây là thứ duy nhất em phải xử lý hôm nay. */}
-    {todo.length>0&&<section className="section-block">
-      <div className="section-title"><div>
-        <h2 className="title-alert"><AlertTriangle size={19}/> Cần cập nhật kết quả</h2>
-        <p>{todo.reduce((n,s)=>n+s.tasks.filter(t=>!reflections[t.id]).length,0)} nhiệm vụ đã qua mà em chưa ghi kết quả. Làm xong phần này trước nhé.</p>
-      </div></div>
-      <div className="plan-grid">{todo.map(s=><SessionCard key={s.key} session={s} reflections={reflections} evidence={evidence} status={status} onOpen={setOpenPlan} onChanged={load}/>)}</div>
-    </section>}
-
-    <section className="section-block">
+    <section className="section-block" ref={listRef}>
       <div className="section-title"><div>
         <h2>Nhiệm vụ của em</h2>
         <p>Tất cả buổi tự học đã đăng ký. Buổi trong tương lai có thể sửa hoặc xóa.</p>
@@ -188,8 +192,10 @@ export default function StudentPage(){
         <FilterChip value="tat_ca"       now={filter} set={setFilter} label="Tất cả"          n={sessions.length}/>
         <FilterChip value="sap_toi"      now={filter} set={setFilter} label="Sắp tới"         n={upcoming.length}/>
         <FilterChip value="chua_ket_qua" now={filter} set={setFilter} label="Chưa có kết quả" n={todo.length} alert/>
-        <FilterChip value="da_xong"      now={filter} set={setFilter} label="Đã xong"         n={past.length-todo.length}/>
+        <FilterChip value="tre_han"      now={filter} set={setFilter} label="Trễ hạn"         n={overdue.length} alert/>
         <FilterChip value="can_phan_hoi" now={filter} set={setFilter} label="Cần viết phản hồi" n={needsAck.length} alert/>
+        <FilterChip value="tu_dong"      now={filter} set={setFilter} label="Hệ thống tự chấm" n={autoRated.length} alert/>
+        <FilterChip value="da_xong"      now={filter} set={setFilter} label="Đã xong"         n={past.length-todo.length}/>
       </div>
 
       <div className="card filters">
@@ -233,7 +239,6 @@ export default function StudentPage(){
   </div>
 }
 
-function Stat({label,value}){return <div className="stat-card"><span>{label}</span><strong>{value}</strong></div>}
 
 function FilterChip({value,now,set,label,n,alert}){
   return <button type="button" className={`chip-btn ${now===value?'on':''} ${alert&&n>0?'alert':''}`}

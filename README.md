@@ -400,6 +400,39 @@ minh chứng) không kích hoạt popup.
 Ô tick ở đầu bảng chỉ chọn **trang đang xem**; muốn cả bộ lọc thì dùng nút *"Chọn tất cả N
 kế hoạch chờ duyệt"* ở thanh bên trên — nói rõ phạm vi để không thao tác nhầm.
 
+### Hộp việc cần xử lý: mỗi ô là một nút lọc
+
+Đầu trang giáo viên từng có **11 ô số liệu + một thẻ “Cần chú ý” 7 dòng** — 18 con số phải
+đọc trước khi tới được dữ liệu. Chúng trùng nhau (*trễ hạn*, *chờ chấm sao*, *tài khoản HS*
+đều xuất hiện hai lần) và phần lớn không bấm được: thầy cô đọc thấy “64 tiết trễ hạn” rồi
+vẫn phải tự đi tìm 64 tiết đó ở đâu.
+
+Nay chỉ còn **8 ô, tất cả đều là việc phải làm gì đó, tất cả bấm được**:
+
+| Ô | Bấm vào thì |
+|---|---|
+| Chờ duyệt · Cần điều chỉnh | lọc theo trạng thái duyệt |
+| Trễ hạn cập nhật | lọc tiến độ quá 48 giờ chưa có kết quả |
+| Chờ chấm sao | lọc tiết **đã có kết quả mà chưa có sao** |
+| Cần hỗ trợ | lọc tiết học sinh đang giơ tay, chưa được giải quyết |
+| Hệ thống tự chấm | lọc tiết bị tự ghi 1 sao do quá hạn |
+| Bổ sung muộn | lọc tiết em nộp **sau khi** đã bị chấm — điểm cũ có thể không còn đúng |
+| Chưa lập KH ngày mai | mở thẳng tab *HS chưa đăng ký* |
+
+Ba quy ước giữ cho các con số không tự mâu thuẫn:
+
+1. **Hộp việc cần xử lý đếm trên toàn bộ dữ liệu đã nạp, KHÔNG theo bộ lọc.** Nếu đếm theo
+   phần đã lọc thì bấm “Chờ duyệt” xong mọi ô còn lại tụt về 0, và thầy cô tưởng đã hết việc
+   trong khi chỉ đang nhìn qua một khe hẹp.
+2. **Mỗi ô đặt LẠI toàn bộ bộ lọc rồi mới bật điều kiện của mình** (hằng `CLEAR`). Chồng thêm
+   thì bấm “Chờ duyệt” rồi bấm “Cần hỗ trợ” sẽ ra giao của hai điều kiện, và con số hiện ra
+   không khớp với con số trên ô vừa bấm.
+3. **Ô bằng 0 được làm mờ**, để hộp 8 ô mà 6 ô rỗng đọc ra ngay là “gần như không còn việc”.
+
+Số liệu **mô tả** (lượt đăng ký, % hoàn thành, điểm trung bình…) chuyển sang tab **Phân
+tích**, và cũng tính trên toàn bộ khoảng đang nạp chứ không theo bộ lọc — bộ lọc nằm ở tab
+khác, không nhìn thấy được từ đây. Thẻ tài khoản học sinh chuyển sang tab **Theo học sinh**.
+
 ## 8. Lịch tự học cố định và ai chưa đăng ký
 
 Hai việc khác nhau nên nằm ở **hai tab riêng**:
@@ -459,6 +492,36 @@ chứ không còn ở `plans`.
 
 Sau giờ tự học, mỗi nhiệm vụ chưa có kết quả hiện một **nút lớn "Cập nhật kết quả"** ngay
 dưới dòng nhiệm vụ — trước đây phải đoán rằng bấm vào dòng sẽ mở popup.
+
+### Đầu trang học sinh: chỉ hiện việc còn tồn, và bấm được
+
+Chỗ này từng là **4 ô số liệu + 5 dòng cảnh báo dài**. Hai vấn đề:
+
+- Bốn ô đó **trùng với mục “Số liệu của em”** ở cuối trang, mà lại **lệch số** vì tính theo
+  hai cách khác nhau (ô trên tính ở trình duyệt trên toàn bộ kế hoạch; mục dưới tính ở CSDL
+  theo khoảng ngày đang chọn). Cùng nhãn *Điểm trung bình*, một bên 3.4 một bên 3.6.
+- Năm dòng cảnh báo bảo em *“mở thẻ có viền đỏ/vàng bên dưới”* — đọc xong vẫn phải tự đi tìm.
+
+Nay đầu trang chỉ còn **thẻ việc cần làm**, và chỉ dựng thẻ cho việc **còn tồn** — không việc
+gì thì cả dải biến mất. Mỗi thẻ bấm vào là **lọc danh sách + cuộn xuống đúng chỗ** (nếu chỉ
+đổi bộ lọc mà không cuộn, em bấm xong tưởng như không có gì xảy ra):
+
+| Thẻ | Lọc ra |
+|---|---|
+| *tiết cần em viết phản hồi* | bị chấm 1–2 sao mà chưa viết một dòng điều chỉnh |
+| *tiết đã quá hạn cập nhật* | quá 48 giờ chưa ghi kết quả |
+| *tiết chưa ghi kết quả* | buổi đã qua, chưa cập nhật, nhưng chưa tới mức quá hạn |
+| *tiết hệ thống tự chấm* | bị tự ghi 1 sao do quá hạn |
+
+Hàng chip lọc ở mục *Nhiệm vụ của em* dùng **chung một biến bộ lọc** với các thẻ trên, nên
+không có hai nguồn sự thật. Mục *“Cần cập nhật kết quả”* tách riêng trước đây đã bỏ: nó vẽ
+lại đúng những thẻ mà danh sách chính bên dưới cũng vẽ, và chip *Chưa có kết quả* làm đúng
+việc của nó chỉ với một cú bấm.
+
+Danh sách phân trang **6 buổi/trang**. Lưới thẻ dùng `repeat(auto-fill,minmax(300px,1fr))`
+kèm `min-width:0` — `1fr` mặc định là `minmax(auto,1fr)`, tức ô lưới **không bao giờ hẹp hơn
+nội dung của nó**, và đó chính là thứ đẩy trang tràn ngang. Đã đo lại ở 375 / 1024 / 1140 /
+1280 px: không còn thanh cuộn ngang ở cỡ nào.
 
 ### Nhiệm vụ kéo dài 2 tiết
 
