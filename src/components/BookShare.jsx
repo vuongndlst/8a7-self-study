@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, CalendarClock, ExternalLink, Link2, Save, Search, Upload, Users } from 'lucide-react'
+import { BookOpen, CalendarClock, ChevronDown, ExternalLink, Link2, Presentation, Save, Search, Upload, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { todayISO } from '../utils/date'
@@ -22,6 +22,39 @@ export function StateBadge({ state }) {
   return <span className={`badge ${TONE[state] ?? 'muted'}`}>{state}</span>
 }
 
+// Giai đoạn của một lượt chia sẻ, quyết định MÀU của thẻ. Sáu giai đoạn thay vì
+// chỉ "bình thường / cảnh báo": em nhìn màu là biết mình đang ở đâu mà không cần
+// đọc chữ, và màu chuyển dần theo mức cấp bách chứ không nhảy thẳng từ xám sang đỏ.
+const phaseOf = (r) => {
+  if (r.teacher_rating != null) return 'done'        // đã được chấm
+  if (r.shared_on) return 'shared'                   // đã đứng lớp chia sẻ
+  if (r.tre_han) return 'late'                       // quá hạn, chưa có link
+  if (r.link_url) return 'submitted'                 // đã nộp, chờ tới buổi
+  const d = r.due_date ? daysTo(r.due_date) : 99
+  if (d <= 3) return 'soon'                          // sắp tới hạn
+  return 'waiting'
+}
+const PHASE_HINT = {
+  waiting:   'Em còn thời gian chuẩn bị.',
+  soon:      'Sắp tới hạn nộp rồi — em tranh thủ hoàn thiện nhé.',
+  late:      'Đã quá hạn nộp. Em bổ sung ngay giúp thầy cô nhé.',
+  submitted: 'Em đã nộp bài. Chuẩn bị cho buổi chia sẻ nhé!',
+  shared:    'Em đã chia sẻ xong, đang chờ thầy cô nhận xét.',
+  done:      'Thầy cô đã nhận xét bài của em.',
+}
+
+// Nút mở bài trình chiếu — cố tình TO và nổi bật. Đây là thứ người xem vào đây
+// để bấm; để nó thành một link chữ nhỏ như các link phụ khác là chôn mất nó.
+export function CanvaButton({ url, label = 'Xem bài trình chiếu' }) {
+  if (!url) return null
+  return <a className="canva-button" href={url} target="_blank" rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}>
+    <Presentation size={22} />
+    <span><strong>{label}</strong><small>Mở trong tab mới</small></span>
+    <ExternalLink size={18} />
+  </a>
+}
+
 // ---------------------------------------------------------------------------
 //  THẺ CỦA HỌC SINH — luôn hiện cho tới khi em chia sẻ xong
 // ---------------------------------------------------------------------------
@@ -32,6 +65,9 @@ export function MyBookShare() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [loaded, setLoaded] = useState(false)
+  // Mặc định GẬP LẠI. Thẻ mở sẵn chiếm gần trọn màn hình đầu tiên của trang kế
+  // hoạch, mà phần lớn thời gian em chẳng có gì để sửa.
+  const [open, setOpen] = useState(false)
 
   const load = async () => {
     const { data } = await supabase.rpc('my_book_share')
@@ -69,55 +105,66 @@ export function MyBookShare() {
   const conLai = row.due_date ? daysTo(row.due_date) : null
   const hanText = conLai == null ? ''
     : conLai > 1 ? `còn ${conLai} ngày` : conLai === 1 ? 'còn 1 ngày' : conLai === 0 ? 'hôm nay là hạn' : `trễ ${-conLai} ngày`
+  const phase = phaseOf(row)
+  // Chưa nhập gì thì nhắc rõ là bấm vào để nhập — thẻ gập lại mà không nói gì
+  // thì em dễ tưởng chỉ là một dòng thông báo.
+  const goiY = row.book_title ? row.book_title : 'Bấm để nhập bài chia sẻ của em'
 
-  return <section className={`card book-card ${row.tre_han ? 'late' : ''}`}>
-    <div className="book-head">
-      <div>
-        <span className="eyebrow"><BookOpen size={13} /> LƯỢT CHIA SẺ SÁCH CỦA EM</span>
-        <h2>Tuần {row.week_no} · báo cáo {dmy(row.report_date)}</h2>
-        <p className="muted-text">
-          Hạn nộp nội dung và link: <strong>{dmy(row.due_date)}</strong>
-          {hanText && <> — <strong className={conLai < 0 ? 'alarm-red' : ''}>{hanText}</strong></>}
-          . Link trình chiếu nhớ bật quyền <strong>ai có liên kết cũng xem được</strong>.
-        </p>
+  return <section className={`card book-card phase-${phase} ${open ? 'open' : ''}`}>
+    <button type="button" className="book-summary" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <span className="book-sum-icon"><BookOpen size={20} /></span>
+      <span className="book-sum-main">
+        <span className="eyebrow">LƯỢT CHIA SẺ SÁCH CỦA EM · TUẦN {row.week_no}</span>
+        <strong>{goiY}</strong>
+        <small>
+          Báo cáo {dmy(row.report_date)} · hạn nộp {dmy(row.due_date)}
+          {hanText && <> — <b>{hanText}</b></>}
+        </small>
+      </span>
+      <span className="book-sum-right">
+        <StateBadge state={row.state} />
+        <ChevronDown size={20} className={`chev ${open ? 'up' : ''}`} />
+      </span>
+    </button>
+
+    {open && <div className="book-body">
+      <p className="phase-hint">{PHASE_HINT[phase]} Link trình chiếu nhớ bật quyền
+        <strong> ai có liên kết cũng xem được</strong>.</p>
+
+      {row.teacher_comment && <div className="detail-box">
+        <strong>Nhận xét của giáo viên</strong>
+        {row.teacher_rating != null && <p><RatingStars value={row.teacher_rating} readOnly /></p>}
+        <p>{row.teacher_comment}</p>
+      </div>}
+      {row.monitor_note && <div className="detail-box">
+        <strong>Nhận xét của cán sự thư viện</strong><p>{row.monitor_note}</p>
+      </div>}
+
+      <div className="form-grid two">
+        <div><label>Tên sách</label>
+          <input value={form.book_title} onChange={(e) => setForm({ ...form, book_title: e.target.value })}
+                 placeholder="Ví dụ: Dế Mèn phiêu lưu ký" /></div>
+        <div><label>Tác giả</label>
+          <input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })}
+                 placeholder="Ví dụ: Tô Hoài" /></div>
       </div>
-      <StateBadge state={row.state} />
-    </div>
+      <label>Tóm tắt nội dung</label>
+      <textarea rows={4} value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })}
+                placeholder="Cuốn sách kể về điều gì? Em tóm tắt ngắn gọn cho các bạn dễ hình dung." />
+      <label>Bài học rút ra</label>
+      <textarea rows={3} value={form.lesson} onChange={(e) => setForm({ ...form, lesson: e.target.value })}
+                placeholder="Em học được gì từ cuốn sách này?" />
+      <label>Link bài trình chiếu (Canva, Slides…)</label>
+      <input value={form.link_url} onChange={(e) => setForm({ ...form, link_url: e.target.value })}
+             placeholder="https://www.canva.com/design/..." />
 
-    {row.teacher_comment && <div className="detail-box">
-      <strong>Nhận xét của giáo viên</strong>
-      {row.teacher_rating != null && <p><RatingStars value={row.teacher_rating} readOnly /></p>}
-      <p>{row.teacher_comment}</p>
+      {row.link_url && <CanvaButton url={row.link_url} label="Mở bài trình chiếu em đã nộp" />}
+      {msg && <div className={msg.startsWith('✓') ? 'notice compact' : 'form-error'}>{msg}</div>}
+      <div className="form-actions">
+        <button className="button primary large" disabled={busy} onClick={save}>
+          <Save size={17} /> {busy ? 'Đang lưu…' : 'Lưu bài chia sẻ'}</button>
+      </div>
     </div>}
-    {row.monitor_note && <div className="detail-box">
-      <strong>Nhận xét của cán sự thư viện</strong><p>{row.monitor_note}</p>
-    </div>}
-
-    <div className="form-grid two">
-      <div><label>Tên sách</label>
-        <input value={form.book_title} onChange={(e) => setForm({ ...form, book_title: e.target.value })}
-               placeholder="Ví dụ: Dế Mèn phiêu lưu ký" /></div>
-      <div><label>Tác giả</label>
-        <input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })}
-               placeholder="Ví dụ: Tô Hoài" /></div>
-    </div>
-    <label>Tóm tắt nội dung</label>
-    <textarea rows={4} value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })}
-              placeholder="Cuốn sách kể về điều gì? Em tóm tắt ngắn gọn cho các bạn dễ hình dung." />
-    <label>Bài học rút ra</label>
-    <textarea rows={3} value={form.lesson} onChange={(e) => setForm({ ...form, lesson: e.target.value })}
-              placeholder="Em học được gì từ cuốn sách này?" />
-    <label>Link bài trình chiếu (Canva, Slides…)</label>
-    <input value={form.link_url} onChange={(e) => setForm({ ...form, link_url: e.target.value })}
-           placeholder="https://www.canva.com/design/..." />
-
-    {msg && <div className={msg.startsWith('✓') ? 'notice compact' : 'form-error'}>{msg}</div>}
-    <div className="form-actions">
-      {row.link_url && <a className="button ghost" href={row.link_url} target="_blank" rel="noopener noreferrer">
-        <ExternalLink size={16} /> Mở link đã nộp</a>}
-      <button className="button primary large" disabled={busy} onClick={save}>
-        <Save size={17} /> {busy ? 'Đang lưu…' : 'Lưu bài chia sẻ'}</button>
-    </div>
   </section>
 }
 
@@ -205,8 +252,8 @@ export function BookShareResults({ classId, canMonitor = false }) {
             <td className="cell-wrap">{r.summary || <em className="muted-text">—</em>}</td>
             <td className="cell-wrap">{r.lesson || <em className="muted-text">—</em>}</td>
             <td>{r.link_url
-              ? <a href={r.link_url} target="_blank" rel="noopener noreferrer" className="mini-link"
-                   onClick={(e) => e.stopPropagation()}><ExternalLink size={13} /> Xem</a>
+              ? <a href={r.link_url} target="_blank" rel="noopener noreferrer" className="row-link"
+                   onClick={(e) => e.stopPropagation()}><Presentation size={16} /> Xem bài</a>
               : <span className="muted-text">—</span>}</td>
           </tr>)}</tbody>
         </table></div></div>}
@@ -230,25 +277,33 @@ function BookDetailModal({ row, canMonitor, onClose, onSaved }) {
   }
 
   return <div className="modal-backdrop" onMouseDown={onClose}>
-    <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal book-modal" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head">
-        <div><span className="eyebrow">TUẦN {row.week_no} · {dmy(row.report_date)}</span>
+        <div>
+          <span className="eyebrow">TUẦN {row.week_no} · CHIA SẺ NGÀY {dmy(row.report_date)}</span>
           <h2>{row.book_title}</h2>
-          <p className="muted-text">{row.author ? `${row.author} · ` : ''}{row.full_name} giới thiệu</p></div>
+          <p className="book-byline">
+            {row.author && <span><b>{row.author}</b></span>}
+            <span>{row.full_name} giới thiệu</span>
+            {row.teacher_rating != null && <RatingStars value={row.teacher_rating} readOnly size={16} />}
+          </p>
+        </div>
         <button className="icon-button" onClick={onClose}>✕</button>
       </div>
-      {row.summary && <div className="detail-box"><strong>Tóm tắt nội dung</strong><p>{row.summary}</p></div>}
-      {row.lesson && <div className="detail-box"><strong>Bài học rút ra</strong><p>{row.lesson}</p></div>}
-      {row.link_url && <p><a className="button ghost" href={row.link_url} target="_blank" rel="noopener noreferrer">
-        <ExternalLink size={16} /> Mở bài trình chiếu</a></p>}
-      {row.teacher_comment && <div className="detail-box">
-        <strong>Nhận xét của giáo viên</strong>
-        {row.teacher_rating != null && <p><RatingStars value={row.teacher_rating} readOnly /></p>}
-        <p>{row.teacher_comment}</p></div>}
+
+      <CanvaButton url={row.link_url} />
+
+      {row.summary && <section className="book-section">
+        <h3>Tóm tắt nội dung</h3><p>{row.summary}</p></section>}
+      {row.lesson && <section className="book-section accent">
+        <h3>Bài học rút ra</h3><p>{row.lesson}</p></section>}
+
+      {row.teacher_comment && <section className="book-section note">
+        <h3>Nhận xét của giáo viên</h3><p>{row.teacher_comment}</p></section>}
 
       {canMonitor
-        ? <>
-            <label>Nhận xét của cán sự thư viện</label>
+        ? <section className="book-section">
+            <h3>Nhận xét của cán sự thư viện</h3>
             <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)}
                       placeholder="Bạn trình bày rõ ràng, phần bài học liên hệ tốt…" />
             {msg && <div className="form-error">{msg}</div>}
@@ -256,9 +311,9 @@ function BookDetailModal({ row, canMonitor, onClose, onSaved }) {
               <button className="button primary" disabled={busy} onClick={save}>
                 <Save size={16} /> {busy ? 'Đang lưu…' : 'Lưu nhận xét'}</button>
             </div>
-          </>
-        : row.monitor_note && <div className="detail-box">
-            <strong>Nhận xét của cán sự thư viện</strong><p>{row.monitor_note}</p></div>}
+          </section>
+        : row.monitor_note && <section className="book-section note">
+            <h3>Nhận xét của cán sự thư viện</h3><p>{row.monitor_note}</p></section>}
     </div>
   </div>
 }
@@ -365,25 +420,55 @@ function RateModal({ row, onClose, onSaved }) {
     onSaved()
   }
 
+  const trong = !row.book_title && !row.summary && !row.lesson && !row.link_url
+
   return <div className="modal-backdrop" onMouseDown={onClose}>
-    <div className="modal small" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal book-modal" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head">
-        <div><span className="eyebrow">TUẦN {row.week_no}</span><h2>{row.full_name}</h2>
-          <p className="muted-text">{row.book_title || 'Chưa cập nhật tên sách'}</p></div>
+        <div>
+          <span className="eyebrow">TUẦN {row.week_no} · BÁO CÁO {dmy(row.report_date)}</span>
+          <h2>{row.full_name}</h2>
+          <p className="book-byline">
+            {row.book_title ? <span><b>{row.book_title}</b></span> : <span className="muted-text">Chưa cập nhật tên sách</span>}
+            {row.author && <span>{row.author}</span>}
+          </p>
+        </div>
         <button className="icon-button" onClick={onClose}>✕</button>
       </div>
-      <label>Ngày chia sẻ thực tế</label>
-      <input type="date" value={sharedOn} onChange={(e) => setSharedOn(e.target.value)} />
-      <label>Đánh giá</label>
-      <RatingStars value={rating} onChange={setRating} />
-      <label>Nhận xét</label>
-      <textarea rows={3} value={comment} onChange={(e) => setComment(e.target.value)}
-                placeholder="Em trình bày tự tin, phần liên hệ bản thân rất tốt…" />
+
+      {/* Bài em nộp hiện ngay đây để thầy cô vừa đọc vừa chấm, không phải mở
+          hai chỗ rồi nhớ chéo qua lại. */}
+      {trong
+        ? <div className="notice warning compact"><Users size={16} /><span>
+            Em chưa nộp nội dung nào. Thầy cô vẫn chấm được nếu em đã trình bày trên lớp.
+          </span></div>
+        : <>
+            <CanvaButton url={row.link_url} />
+            {row.summary && <section className="book-section">
+              <h3>Tóm tắt nội dung</h3><p>{row.summary}</p></section>}
+            {row.lesson && <section className="book-section accent">
+              <h3>Bài học rút ra</h3><p>{row.lesson}</p></section>}
+          </>}
+
+      {row.monitor_note && <section className="book-section note">
+        <h3>Nhận xét của cán sự thư viện</h3><p>{row.monitor_note}</p></section>}
+
+      <section className="book-section">
+        <h3>Đánh giá của thầy cô</h3>
+        <label>Ngày chia sẻ thực tế</label>
+        <input type="date" value={sharedOn} onChange={(e) => setSharedOn(e.target.value)} />
+        <label>Số sao</label>
+        <RatingStars value={rating} onChange={setRating} size={26} />
+        <label>Nhận xét</label>
+        <textarea rows={3} value={comment} onChange={(e) => setComment(e.target.value)}
+                  placeholder="Em trình bày tự tin, phần liên hệ bản thân rất tốt…" />
+      </section>
+
       {msg && <div className="form-error">{msg}</div>}
       <div className="form-actions">
         <button className="button ghost" onClick={onClose}>Huỷ</button>
-        <button className="button primary" disabled={busy} onClick={save}>
-          {busy ? 'Đang lưu…' : 'Lưu đánh giá'}</button>
+        <button className="button primary large" disabled={busy} onClick={save}>
+          <Save size={17} /> {busy ? 'Đang lưu…' : 'Lưu đánh giá'}</button>
       </div>
     </div>
   </div>

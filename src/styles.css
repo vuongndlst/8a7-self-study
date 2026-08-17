@@ -627,13 +627,63 @@ th,td{padding:11px 12px}
 }
 
 /* ---------- v9: chia se sach ---------- */
-.book-card{padding:24px;margin:0 0 22px}
-.book-card.late{border-color:#f0cdcd;box-shadow:0 0 0 2px rgba(190,60,60,.12)}
-.book-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px}
-.book-head h2{margin:8px 0 6px;font-size:24px}
-.book-card label{display:block;margin:14px 0 5px;font-size:12.5px;font-weight:700;color:#4a545b}
-.book-card textarea{width:100%;resize:vertical}
 
+/* --- Thẻ của học sinh: gập lại, đổi màu theo giai đoạn --- */
+.book-card{padding:0;margin:0 0 22px;overflow:hidden;border-left:4px solid var(--line)}
+.book-summary{display:flex;align-items:center;gap:14px;width:100%;text-align:left;font:inherit;
+  background:none;border:0;padding:16px 20px;cursor:pointer;transition:.16s}
+.book-summary:hover{background:rgba(0,0,0,.02)}
+.book-sum-icon{flex:0 0 auto;width:42px;height:42px;border-radius:13px;display:grid;place-items:center;
+  background:var(--brand-bg);color:var(--brand)}
+.book-sum-main{flex:1;min-width:0}
+.book-sum-main .eyebrow{display:block;font-size:10px;letter-spacing:1.1px}
+.book-sum-main strong{display:block;font-size:17px;margin:4px 0 3px;overflow-wrap:anywhere}
+.book-sum-main small{display:block;color:var(--muted);font-size:12px}
+.book-sum-right{flex:0 0 auto;display:flex;align-items:center;gap:10px}
+.book-sum-right .chev{color:var(--muted);transition:transform .18s}
+.book-sum-right .chev.up{transform:rotate(180deg)}
+.book-body{padding:4px 20px 20px;border-top:1px solid var(--line)}
+.book-body label{display:block;margin:14px 0 5px;font-size:12.5px;font-weight:700;color:#4a545b}
+.book-body textarea{width:100%;resize:vertical}
+.phase-hint{margin:14px 0 4px;font-size:13px;color:#4a545b}
+
+/* Sáu giai đoạn, màu chuyển dần theo mức cấp bách — nhìn màu là biết đang ở đâu. */
+.book-card.phase-waiting  {border-left-color:#c3ced6}
+.book-card.phase-soon     {border-left-color:var(--warn)}
+.book-card.phase-soon      .book-sum-icon{background:var(--warn-bg);color:#8a5a12}
+.book-card.phase-late     {border-left-color:var(--danger);background:#fffaf9}
+.book-card.phase-late      .book-sum-icon{background:var(--danger-bg);color:#9b3333}
+.book-card.phase-submitted{border-left-color:var(--ok)}
+.book-card.phase-submitted .book-sum-icon{background:var(--ok-bg);color:#1e6a4c}
+.book-card.phase-shared   {border-left-color:var(--brand)}
+.book-card.phase-done     {border-left-color:var(--ok);background:#fbfdfc}
+.book-card.phase-done      .book-sum-icon{background:var(--ok-bg);color:#1e6a4c}
+
+/* --- Nút mở bài trình chiếu: cố tình TO --- */
+.canva-button{display:flex;align-items:center;gap:14px;margin:16px 0;padding:16px 18px;
+  border-radius:16px;border:1px solid transparent;
+  background:linear-gradient(135deg,var(--brand-dark),#20425b);color:#fff;
+  box-shadow:0 10px 24px rgba(23,63,49,.18);transition:.18s}
+.canva-button:hover{transform:translateY(-2px);box-shadow:0 16px 32px rgba(23,63,49,.24)}
+.canva-button>span{flex:1;min-width:0}
+.canva-button strong{display:block;font-size:16px;font-weight:750}
+.canva-button small{display:block;font-size:11.5px;opacity:.8;margin-top:2px}
+
+/* --- Popup chi tiết một bài chia sẻ --- */
+.book-modal{width:min(680px,100%)}
+.book-modal .modal-head h2{font-size:27px;margin:7px 0 8px;line-height:1.2}
+.book-byline{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0;
+  color:var(--muted);font-size:13px}
+.book-byline b{color:var(--ink)}
+.book-section{margin-top:18px}
+.book-section h3{font-size:12px;text-transform:uppercase;letter-spacing:.9px;color:var(--muted);margin:0 0 7px}
+.book-section p{margin:0;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.book-section.accent{border-left:3px solid var(--brand);padding-left:14px}
+.book-section.note{background:#f7f9fa;border-radius:13px;padding:14px 16px}
+.book-section label{display:block;margin:14px 0 5px;font-size:12.5px;font-weight:700;color:#4a545b}
+.book-section textarea{width:100%;resize:vertical}
+
+/* --- Bảng --- */
 .book-table{min-width:820px}
 .book-table td small{display:block;color:var(--muted);margin-top:3px;white-space:normal}
 .book-table select,.book-table input[type=date]{margin:0;padding:7px 9px;font-size:12.5px;min-width:120px}
@@ -642,20 +692,21 @@ th,td{padding:11px 12px}
 .clickable-row{cursor:pointer}
 .clickable-row:hover td{background:#f4f8fb}
 
-/* Ô "Chia sẻ sách" ở hộp việc cần xử lý chứa TÊN chứ không phải số, nên chữ
-   phải nhỏ lại và được phép xuống dòng — nếu để cỡ 29px như các ô đếm thì tên
-   dài sẽ tràn ra ngoài thẻ. */
-.inbox-grid .stat-card strong{overflow-wrap:anywhere}
-.inbox-grid .stat-card strong:not(:only-child){font-size:clamp(15px,1.4vw,20px);line-height:1.25;letter-spacing:-.3px}
-
-@media(max-width:700px){
-  .book-head{flex-direction:column}
-  .book-card{padding:18px}
-}
-
-/* Bảng kết quả chia sẻ: hai cột văn bản dài phải xuống dòng và chia đều chỗ,
-   nếu để `nowrap` như các bảng khác thì tóm tắt bị cắt cụt thành một dòng. */
+/* Bảng kết quả: hai cột văn bản dài phải xuống dòng và chia đều chỗ. */
 .book-table.results{min-width:760px}
 .book-table.results td.cell-wrap{white-space:normal;line-height:1.5;max-width:280px}
 .book-table.results td.cell-wrap em{font-style:normal}
 .book-table.results th:nth-child(3),.book-table.results th:nth-child(4){width:28%}
+.book-table.results .row-link{display:inline-flex;align-items:center;gap:6px;font-weight:700;
+  color:var(--brand);border:1px solid #cfe0ee;background:var(--brand-bg);
+  border-radius:10px;padding:8px 12px;white-space:nowrap}
+.book-table.results .row-link:hover{background:#e3eef7}
+
+@media(max-width:700px){
+  .book-summary{padding:14px;gap:11px}
+  .book-sum-icon{width:36px;height:36px}
+  .book-sum-main strong{font-size:15px}
+  .book-body{padding:4px 14px 16px}
+  .canva-button{padding:14px}
+  .book-modal .modal-head h2{font-size:22px}
+}

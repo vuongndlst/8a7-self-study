@@ -933,6 +933,44 @@ là ba dòng dữ liệu khác nhau, không phải ba nhánh `if` trong code.
 Giáo viên đổi loại tuần, dời ngày, xếp lại học sinh ngay trong bảng ở tab **Chia sẻ sách**;
 hoặc nhập hàng loạt từ [file mẫu](public/templates/Mau_lich_chia_se_sach.xlsx).
 
+### Thẻ của học sinh: gập lại, đổi màu theo giai đoạn
+
+Thẻ mở sẵn chiếm gần trọn màn hình đầu tiên của trang *Kế hoạch của em*, mà phần lớn thời gian
+em chẳng có gì để sửa. Nay **mặc định gập lại — 90px thay vì ~600px**, bấm mới mở form.
+
+Dòng tóm tắt vẫn nói đủ để em biết có cần bấm hay không: tuần · tên sách (hoặc *“Bấm để nhập
+bài chia sẻ của em”* khi còn trống) · ngày báo cáo · hạn nộp kèm đếm ngược · huy hiệu trạng thái.
+
+**Sáu giai đoạn, mỗi giai đoạn một màu viền trái** — nhìn màu là biết đang ở đâu, không cần đọc chữ:
+
+| Giai đoạn | Màu | Khi nào |
+|---|---|---|
+| `waiting` | xám | còn hơn 3 ngày tới hạn |
+| `soon` | vàng | còn ≤ 3 ngày, chưa có link |
+| `late` | đỏ (kèm nền hồng nhạt) | quá hạn, chưa có link |
+| `submitted` | xanh lá | đã nộp link, chờ tới buổi |
+| `shared` | xanh dương | đã đứng lớp chia sẻ |
+| `done` | xanh lá đậm | thầy cô đã chấm |
+
+Màu chuyển **dần** theo mức cấp bách chứ không nhảy thẳng từ xám sang đỏ. Mỗi giai đoạn kèm một
+câu gợi ý riêng khi mở thẻ ra.
+
+### Nút mở bài trình chiếu cố tình TO
+
+`.canva-button` — **1135×70px** trên thẻ học sinh, **636×70px** trong popup. Đây là thứ người
+xem vào đây để bấm; để nó thành một link chữ nhỏ lẫn giữa các link phụ là chôn mất nó.
+
+Trong bảng kết quả thì là nút *“Xem bài”* có nền và viền (97×34px), không phải chữ gạch chân.
+
+### Popup chi tiết — đủ để đọc và để chấm
+
+Bấm một dòng trong bảng kết quả mở popup: tên sách cỡ lớn, tác giả + người giới thiệu + số sao
+trên một dòng, **nút Canva ngay dưới tiêu đề**, rồi *Tóm tắt nội dung* và *Bài học rút ra* (mục
+này có vạch nhấn bên trái), cuối cùng là nhận xét của giáo viên và cán sự.
+
+Popup **chấm điểm của giáo viên dùng cùng bố cục ấy**, cộng thêm phần đánh giá ở cuối. Trước đây
+nó chỉ hiện tên sách trơ trọi — thầy cô phải mở hai chỗ rồi nhớ chéo qua lại mới chấm được.
+
 ### Học sinh chỉ sửa được nội dung — chặn bằng trigger, không bằng RLS
 
 RLS chặn được **dòng** chứ không chặn được **cột**. Nếu chỉ dựa vào RLS thì em nào biết gọi API
