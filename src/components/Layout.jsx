@@ -13,9 +13,11 @@ export default function Layout({ children }) {
   const logout = async () => { await signOut(); navigate('/') }
   const active = (path) => location.pathname === path
 
-  // Thông báo về tiết học thì mở thẳng trang tương ứng với vai trò.
-  const openPlan = () => navigate(isStaff ? '/teacher' : '/student')
-  const openChat = () => navigate(isStaff ? '/teacher' : '/student')
+  // Thông báo về tiết học thì mở thẳng trang tương ứng với vai trò — và mang theo
+  // mã kế hoạch để trang đó bật đúng nhiệm vụ được nhắc, chứ không bỏ em ở giữa
+  // một danh sách dài rồi tự đi tìm.
+  const openPlan = (planId) => navigate(isStaff ? '/teacher' : '/student', { state: { planId } })
+  const openChat = () => navigate(isStaff ? '/teacher' : '/student', { state: { openChat: true } })
 
   // Logo trường luôn đứng đầu; phù hiệu lớp đứng cạnh và chạy theo LỚP đang xem
   // nên học sinh lớp nào vào cũng thấy đúng lớp mình.

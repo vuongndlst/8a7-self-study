@@ -103,7 +103,7 @@ tr.alarm-amber td{background:rgba(160,97,10,.05)}
 .bell-wrap{position:relative}
 .nav-button.bell{position:relative;padding:9px 10px}
 .bell-dot{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--danger);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center}
-.bell-panel{position:absolute;right:0;top:46px;width:min(360px,calc(100vw - 32px));z-index:60;padding:0;overflow:hidden;box-shadow:var(--shadow)}
+.bell-panel{position:fixed;width:min(360px,calc(100vw - 24px));z-index:80;padding:0;overflow:hidden;box-shadow:var(--shadow)}
 .bell-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line)}
 .bell-empty{padding:22px 14px;text-align:center;color:var(--muted);font-size:13px}
 .bell-list{list-style:none;margin:0;padding:0;max-height:380px;overflow:auto}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CalendarPlus, ChevronDown, ExternalLink, FileUp, KeyRound, MessageSquare, MessageSquareQuote, Plus, RefreshCw, Search, ShieldCheck, Trash2 } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase, callFunction } from '../lib/supabase'
 import { shrinkImage } from '../lib/image'
@@ -59,6 +60,18 @@ export default function StudentPage(){
     }else{setReflections({});setEvidence({});setStatus({})}
   }
   useEffect(()=>{load()},[profile?.id])
+
+  // Bấm một thông báo ở chuông thì mở luôn popup của đúng nhiệm vụ đó. Phải đợi
+  // `plans` tải xong mới tìm được, nên hiệu ứng này phụ thuộc cả vào plans.
+  const nav=useLocation()
+  useEffect(()=>{
+    const id=nav.state?.planId
+    if(!id||!plans.length)return
+    const p=plans.find(x=>x.id===id)
+    if(p)setOpenPlan(p)
+    // Xoá state đi để bấm F5 hoặc quay lại không bật lại popup lần nữa.
+    window.history.replaceState({},'')
+  },[nav.state?.planId,plans])
 
   // Gom nhiệm vụ theo BUỔI: một buổi có thể có nhiều nhiệm vụ.
   const sessions=useMemo(()=>{
