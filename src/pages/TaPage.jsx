@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LifeBuoy, MessageSquare, RefreshCw, Search, ShieldCheck, UserX } from 'lucide-react'
+import { BookOpen, LifeBuoy, MessageSquare, RefreshCw, Search, ShieldCheck, UserX } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { selectIn, daysAgoISO } from '../lib/query'
 import { useAuth } from '../context/AuthContext'
@@ -9,7 +9,6 @@ import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
 import RatingStars from '../components/RatingStars'
 import StatusBadge from '../components/StatusBadge'
 import Avatar from '../components/Avatar'
-import { BookShareUpcoming } from '../components/BookShare'
 
 const PAGE_SIZE = 25
 
@@ -155,15 +154,13 @@ export default function TaPage() {
       <div className="button-row"><button className="button ghost" onClick={() => { load(); checkMissing(missingDate) }}><RefreshCw size={17} /> Làm mới</button></div>
     </section>
 
-    {/* Cán sự thư viện cần thấy lịch chia sẻ sách LIÊN TỤC, không chỉ lúc hệ
-        thống bắn thông báo — nên dải này đứng ngay đầu trang. */}
-    {context.bookShare && assistant.can_review_books && <>
-      <BookShareUpcoming classId={context.classId} weeks={4} title="Sắp chia sẻ sách" />
-      <p className="muted-text small">
-        Xem toàn bộ bài chia sẻ của lớp và viết nhận xét ở trang{' '}
-        <Link to="/books"><strong>Chia sẻ sách</strong></Link>.
-      </p>
-    </>}
+    {/* Chia sẻ sách có trang riêng — ở đây chỉ dẫn sang, không vẽ lại cùng một
+        bảng ở hai chỗ. */}
+    {context.bookShare && assistant.can_review_books && <div className="notice compact">
+      <BookOpen size={16} /><span>
+        Em là <strong>cán sự thư viện</strong> của lớp. Lịch chia sẻ sách và ô nhận xét
+        nằm ở trang <Link to="/books"><strong>Chia sẻ sách</strong></Link>.
+      </span></div>}
 
     {assistant.can_view_plans && <section className="stats-grid">
       <Stat label={`Nhiệm vụ ${rangeLabel}`} value={stats.tasks} />

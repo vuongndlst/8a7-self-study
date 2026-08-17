@@ -652,3 +652,10 @@ th,td{padding:11px 12px}
   .book-head{flex-direction:column}
   .book-card{padding:18px}
 }
+
+/* Bảng kết quả chia sẻ: hai cột văn bản dài phải xuống dòng và chia đều chỗ,
+   nếu để `nowrap` như các bảng khác thì tóm tắt bị cắt cụt thành một dòng. */
+.book-table.results{min-width:760px}
+.book-table.results td.cell-wrap{white-space:normal;line-height:1.5;max-width:280px}
+.book-table.results td.cell-wrap em{font-style:normal}
+.book-table.results th:nth-child(3),.book-table.results th:nth-child(4){width:28%}

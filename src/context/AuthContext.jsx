@@ -18,6 +18,16 @@ export function AuthProvider({ children }) {
   const [recovery, setRecovery] = useState(false)
   const [loading, setLoading] = useState(true)
 
+  // Công tắc chia sẻ sách của một lớp. Đọc CÙNG LÚC với lớp chứ không để một
+  // hiệu ứng riêng chạy sau — nếu tách ra thì mục lục và các tab liên quan hiện
+  // lên trễ vài trăm mili giây, nhìn như giao diện nhấp nháy.
+  const bookShareOf = async (classId) => {
+    if (!classId) return false
+    const { data } = await supabase.from('classes')
+      .select('book_share_enabled').eq('id', classId).maybeSingle()
+    return !!data?.book_share_enabled
+  }
+
   const loadProfile = async (user) => {
     if (!user) { setProfile(null); setContext(EMPTY_CONTEXT); setAssistant(null); setClasses([]); return }
 
@@ -49,18 +59,20 @@ export function AuthProvider({ children }) {
         className: active?.class_name ?? '',
         yearName: active?.year_name ?? '',
         gradeLevel: active?.grade_level ?? null,
+        bookShare: await bookShareOf(active?.class_id),
       })
       setAssistant(null)
     } else {
       const { data: rows } = await supabase
         .from('enrollments')
-        .select('class_id, classes!inner(id,name,school_years!inner(name,is_active))')
+        .select('class_id, classes!inner(id,name,book_share_enabled,school_years!inner(name,is_active))')
         .eq('is_active', true)
       const active = (rows ?? []).find((r) => r.classes?.school_years?.is_active)
       setContext({
         classId: active?.class_id ?? null,
         className: active?.classes?.name ?? '',
         yearName: active?.classes?.school_years?.name ?? '',
+        bookShare: !!active?.classes?.book_share_enabled,
       })
 
       // Em này có được cử làm trợ giảng không, và được bật những quyền nào.
@@ -91,27 +103,16 @@ export function AuthProvider({ children }) {
     return () => { active = false; sub.subscription.unsubscribe() }
   }, [])
 
-  // Chia sẻ sách là hoạt động của riêng từng lớp — không phải lớp nào cũng làm.
-  // Đọc công tắc theo lớp đang xem để toàn bộ giao diện liên quan tự ẩn/hiện.
-  useEffect(() => {
-    if (!context.classId) return
-    let alive = true
-    supabase.from('classes').select('book_share_enabled').eq('id', context.classId).maybeSingle()
-      .then(({ data }) => {
-        if (!alive) return
-        const on = !!data?.book_share_enabled
-        setContext((prev) => (prev.classId === context.classId && prev.bookShare !== on
-          ? { ...prev, bookShare: on } : prev))
-      })
-    return () => { alive = false }
-  }, [context.classId])
 
   // Đổi lớp đang xem. Chỉ chấp nhận lớp nằm trong danh sách được phép.
-  const selectClass = (classId) => {
+  const selectClass = async (classId) => {
     const c = classes.find((x) => x.class_id === classId)
     if (!c) return
     localStorage.setItem(CLASS_KEY, classId)
-    setContext({ classId: c.class_id, className: c.class_name, yearName: c.year_name, gradeLevel: c.grade_level })
+    setContext({
+      classId: c.class_id, className: c.class_name, yearName: c.year_name,
+      gradeLevel: c.grade_level, bookShare: await bookShareOf(c.class_id),
+    })
   }
 
   const value = useMemo(() => ({

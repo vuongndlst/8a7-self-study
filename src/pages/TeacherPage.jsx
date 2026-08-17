@@ -14,7 +14,6 @@ import RosterPanel from '../components/RosterPanel'
 import ClassSwitcher from '../components/ClassSwitcher'
 import TeacherOnboarding from '../components/TeacherOnboarding'
 import { ClassAnalytics, StudentAnalytics } from '../components/Analytics'
-import { BookSharePanel } from '../components/BookShare'
 
 const PAGE_SIZE = 25
 
@@ -101,14 +100,6 @@ export default function TeacherPage(){
   }
   useEffect(()=>{load()},[context.classId,windowDays])
 
-  // Lượt chia sẻ sách gần nhất — hiện thẳng ở hộp việc cần xử lý để thầy cô thấy
-  // ai sắp tới lượt mà không phải mở tab.
-  const [nextBook,setNextBook]=useState(null)
-  useEffect(()=>{
-    if(!context.classId||!context.bookShare)return setNextBook(null)
-    supabase.rpc('upcoming_book_shares',{p_class:context.classId,p_weeks:1})
-      .then(({data})=>setNextBook((data??[])[0]??null))
-  },[context.classId,context.bookShare,view])
 
   const studentMap=useMemo(()=>Object.fromEntries(students.map(s=>[s.id,s])),[students])
   const rows=useMemo(()=>{
@@ -338,9 +329,6 @@ export default function TeacherPage(){
             active={filters.recheck==='co'}/>
       <Stat label="Chưa lập KH ngày mai" value={noPlanTomorrow.length} alert={noPlanTomorrow.length>0}
             onClick={()=>setView('missing')} active={view==='missing'}/>
-      {context.bookShare&&nextBook&&<Stat label={`Chia sẻ sách · tuần ${nextBook.week_no}`}
-            value={nextBook.full_name??'chưa xếp'} alert={nextBook.tre_han}
-            onClick={()=>setView('books')} active={view==='books'}/>}
     </section>
 
     <div className="segmented view-switch">
@@ -351,13 +339,11 @@ export default function TeacherPage(){
       <button type="button" className={view==='missing'?'active':''} onClick={()=>setView('missing')}>HS chưa đăng ký</button>
       <button type="button" className={view==='schedule'?'active':''} onClick={()=>setView('schedule')}>Lịch tự học</button>
       <button type="button" className={view==='assistants'?'active':''} onClick={()=>setView('assistants')}>Trợ giảng</button>
-      {context.bookShare&&<button type="button" className={view==='books'?'active':''} onClick={()=>setView('books')}>Chia sẻ sách</button>}
     </div>
 
     {view==='schedule'&&<ClassScheduleSettings classId={context.classId} className={context.className}/>}
     {view==='missing'&&<MissingRegistrations classId={context.classId}/>}
     {view==='roster'&&<RosterPanel classId={context.classId} className={context.className} yearName={context.yearName}/>}
-    {view==='books'&&context.bookShare&&<BookSharePanel classId={context.classId} className={context.className} roster={roster}/>}
 
     {/* Số liệu MÔ TẢ (không phải việc cần làm) sống ở tab Phân tích. */}
     {view==='analytics'&&<>

@@ -961,14 +961,37 @@ Trong cả bốn lần, phần nội dung em **được phép** sửa vẫn gi�
 Thêm cờ `class_assistants.can_review_books` thay vì dựng hệ vai trò thứ hai. Cán sự thấy dải
 *Sắp chia sẻ sách* ngay đầu trang trợ giảng và viết được nhận xét trong bảng lớp.
 
+### Hai dashboard tách hẳn nhau
+
+Chia sẻ sách **không nằm trong dashboard tự học**. Nó có mục lục riêng và trang riêng
+(`#/books`), vì hai hoạt động khác nhịp (tự học hằng ngày, chia sẻ sách hằng tuần), khác người
+theo dõi (cán sự thư viện chỉ quan tâm phần sách) và khác vòng đời. Gộp chung thì thanh tab
+phình ra và hộp việc cần xử lý lẫn hai loại việc không liên quan.
+
+| Vai trò | Thấy gì ở `#/books` |
+|---|---|
+| Học sinh | **Kết quả chia sẻ** — bảng 5 cột: họ tên · tên sách · nội dung · bài học rút ra · link |
+| Cán sự thư viện | thêm dải *Sắp chia sẻ sách* và ô nhận xét trong popup chi tiết |
+| Giáo viên | thêm tab *Xếp lịch & chấm* |
+
+Bảng kết quả cố ý **đơn giản**: chỉ hiện lượt đã có nội dung, không có cột tuần, ngày báo cáo
+hay trạng thái. Học sinh vào đây để đọc bạn mình giới thiệu sách gì, không phải để theo dõi
+tiến độ — theo dõi tiến độ là việc của giáo viên, ở tab bên cạnh.
+
+### Công tắc lớp phải nạp cùng lúc với lớp
+
+Ban đầu tôi đọc `book_share_enabled` bằng một `useEffect` riêng chạy sau khi có `classId`. Hậu
+quả: mục lục và các tab liên quan hiện lên trễ vài trăm mili giây — nhìn như giao diện nhấp
+nháy, lúc ẩn lúc hiện. Nay công tắc được đọc **trong chính `loadProfile`**, cùng một lượt với
+lớp, nên `context` không bao giờ ở trạng thái "đã có lớp nhưng chưa biết có bật hay không".
+
 ### Nhìn thấy liên tục, không chỉ lúc có thông báo
 
 Thông báo đẩy một lần rồi trôi; lịch thì phải luôn nhìn thấy. Nên có **cả hai**:
 
-- Ô **“Chia sẻ sách · tuần N”** trong hộp việc cần xử lý của giáo viên, hiện tên em sắp tới lượt
-  và **đổi màu cảnh báo khi quá hạn nộp mà link còn trống**.
-- Dải **Sắp chia sẻ sách** (4 tuần) ở tab giáo viên và trang cán sự.
-- Trang **`#/books`** — bảng cả năm, ai trong lớp cũng vào xem bất cứ lúc nào.
+- Dải **Sắp chia sẻ sách** (4 tuần) ngay đầu trang `#/books`, hiện tên em sắp tới lượt, tình
+  trạng nộp bài, và **tô đỏ dòng quá hạn nộp mà link còn trống**.
+- Bảng **Kết quả chia sẻ** — ai trong lớp cũng vào đọc bất cứ lúc nào.
 
 Năm mốc nhắc, chạy trên `process_book_share_reminders()` lúc 08:00 giờ Việt Nam, `dedupe_key`
 đảm bảo không nhắc trùng:

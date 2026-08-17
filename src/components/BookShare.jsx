@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, CalendarClock, ExternalLink, Link2, Save, Upload, Users } from 'lucide-react'
+import { BookOpen, CalendarClock, ExternalLink, Link2, Save, Search, Upload, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { todayISO } from '../utils/date'
@@ -158,12 +158,15 @@ export function BookShareUpcoming({ classId, weeks = 4, title = 'Sắp chia sẻ
 }
 
 // ---------------------------------------------------------------------------
-//  BẢNG CẢ LỚP — ai trong lớp cũng xem được, bất cứ lúc nào
+//  KẾT QUẢ CHIA SẺ — cả lớp cùng xem
 // ---------------------------------------------------------------------------
-export function BookShareBoard({ classId, className, canMonitor = false, onChanged }) {
+// Cố ý ĐƠN GIẢN: chỉ tên bạn, tên sách, nội dung, bài học và link. Học sinh vào
+// đây để đọc xem bạn mình đã giới thiệu sách gì, không phải để theo dõi tiến độ
+// — phần lịch và trạng thái là việc của giáo viên, nằm ở bảng quản lý bên dưới.
+export function BookShareResults({ classId, canMonitor = false }) {
   const [rows, setRows] = useState([])
   const [open, setOpen] = useState(null)
-  const [filter, setFilter] = useState('share')
+  const [q, setQ] = useState('')
 
   const load = async () => {
     const { data } = await supabase.rpc('class_book_shares', { p_class: classId })
@@ -171,45 +174,45 @@ export function BookShareBoard({ classId, className, canMonitor = false, onChang
   }
   useEffect(() => { if (classId) load() }, [classId])
 
-  const shown = useMemo(() => rows.filter((r) => {
-    if (filter === 'share') return r.kind === 'share'
-    if (filter === 'done') return !!r.shared_on
-    if (filter === 'reserve') return r.kind === 'reserve'
-    return true
-  }), [rows, filter])
-
-  const daChiaSe = rows.filter((r) => r.shared_on).length
-  const tongLuot = rows.filter((r) => r.kind === 'share').length
+  // Chỉ hiện những lượt ĐÃ CÓ NỘI DUNG. Tuần chưa tới lượt, tuần nghỉ, tuần dự
+  // phòng đều không phải "kết quả chia sẻ" nên không xuất hiện ở đây.
+  const done = useMemo(() => {
+    const k = q.trim().toLowerCase()
+    return rows
+      .filter((r) => r.book_title)
+      .filter((r) => !k || `${r.full_name ?? ''} ${r.book_title} ${r.author ?? ''}`.toLowerCase().includes(k))
+      .sort((a, b) => (b.report_date ?? '').localeCompare(a.report_date ?? ''))
+  }, [rows, q])
 
   return <section className="section-block">
     <div className="section-title"><div>
-      <h2><BookOpen size={19} /> Chia sẻ sách — lớp {className}</h2>
-      <p>Đã chia sẻ <strong>{daChiaSe}</strong> / {tongLuot} lượt. Bấm một dòng để xem nội dung bạn đã giới thiệu.</p>
+      <h2><BookOpen size={19} /> Kết quả chia sẻ sách</h2>
+      <p>Những cuốn sách các bạn trong lớp đã giới thiệu. Bấm một dòng để đọc đầy đủ.</p>
     </div></div>
 
-    <div className="quick-views">
-      {[['share', 'Có chia sẻ'], ['done', 'Đã chia sẻ xong'], ['reserve', 'Tuần dự phòng'], ['all', 'Tất cả tuần']]
-        .map(([v, label]) => <button key={v} type="button"
-          className={`chip-btn ${filter === v ? 'on' : ''}`} onClick={() => setFilter(v)}>{label}</button>)}
-    </div>
+    {rows.filter((r) => r.book_title).length > 6 && <div className="card filters">
+      <div className="search-box"><Search size={17} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm theo tên bạn, tên sách hoặc tác giả…" /></div>
+    </div>}
 
-    <div className="card table-card"><div className="table-wrap"><table className="book-table">
-      <thead><tr><th>Tuần</th><th>Báo cáo</th><th>Học sinh</th><th>Sách</th><th>Tác giả</th><th>Sao</th><th>Tình trạng</th></tr></thead>
-      <tbody>{shown.map((r) => <tr key={r.week_id}
-          className={`${r.book_title ? 'clickable-row' : ''} ${r.tre_han ? 'row-late' : ''}`}
-          onClick={() => r.book_title && setOpen(r)}>
-        <td><strong>Tuần {r.week_no}</strong><small>{dm(r.starts_on)}–{dm(r.ends_on)}</small></td>
-        <td>{dmy(r.report_date)}</td>
-        <td>{r.full_name ?? <em className="muted-text">{KIND_LABEL[r.kind]}{r.skip_reason ? ` · ${r.skip_reason}` : ''}</em>}</td>
-        <td>{r.book_title || <em className="muted-text">—</em>}</td>
-        <td>{r.author || '—'}</td>
-        <td>{r.teacher_rating != null ? <RatingStars value={r.teacher_rating} readOnly size={15} /> : '—'}</td>
-        <td>{r.kind === 'share' ? <StateBadge state={r.state} /> : <span className="badge muted">{KIND_LABEL[r.kind]}</span>}</td>
-      </tr>)}</tbody>
-    </table></div></div>
+    {done.length === 0
+      ? <div className="empty-state"><p>Chưa có bạn nào chia sẻ sách. Quay lại sau nhé!</p></div>
+      : <div className="card table-card"><div className="table-wrap"><table className="book-table results">
+          <thead><tr><th>Họ tên</th><th>Tên sách</th><th>Nội dung</th><th>Bài học rút ra</th><th>Link</th></tr></thead>
+          <tbody>{done.map((r) => <tr key={r.week_id} className="clickable-row" onClick={() => setOpen(r)}>
+            <td><strong>{r.full_name}</strong><small>{dmy(r.report_date)}</small></td>
+            <td><strong>{r.book_title}</strong>{r.author && <small>{r.author}</small>}</td>
+            <td className="cell-wrap">{r.summary || <em className="muted-text">—</em>}</td>
+            <td className="cell-wrap">{r.lesson || <em className="muted-text">—</em>}</td>
+            <td>{r.link_url
+              ? <a href={r.link_url} target="_blank" rel="noopener noreferrer" className="mini-link"
+                   onClick={(e) => e.stopPropagation()}><ExternalLink size={13} /> Xem</a>
+              : <span className="muted-text">—</span>}</td>
+          </tr>)}</tbody>
+        </table></div></div>}
 
     {open && <BookDetailModal row={open} canMonitor={canMonitor}
-      onClose={() => setOpen(null)} onSaved={() => { setOpen(null); load(); onChanged?.() }} />}
+      onClose={() => setOpen(null)} onSaved={() => { setOpen(null); load() }} />}
   </section>
 }
 
