@@ -17,7 +17,9 @@ export default function PasswordGate({ mode }) {
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const checks = passwordChecks(pw, mshs)
+  // Giáo viên không có MSHS nên luật "không chứa MSHS" không áp dụng — truyền
+  // chuỗi rỗng thì passwordChecks tự bỏ qua dòng đó.
+  const checks = passwordChecks(pw, mshs).filter((c) => c.key !== 'mshs' || !!mshs)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -51,10 +53,16 @@ export default function PasswordGate({ mode }) {
           <h2>{mode === 'recovery' ? 'Đặt mật khẩu mới' : staff ? 'Đặt mật khẩu riêng của thầy/cô' : 'Đặt mật khẩu riêng của em'}</h2>
         </div>
       </div>
+      {/* Lời văn phải theo vai trò. Trước đây tiêu đề ghi "thầy/cô" mà đoạn dưới
+          vẫn xưng "em", nên giáo viên đọc xong tưởng mình vào nhầm màn hình. */}
       <p className="muted-text">
         {mode === 'recovery'
-          ? 'Em đang mở link khôi phục từ email. Hãy đặt mật khẩu mới để tiếp tục.'
-          : 'Giáo viên vừa đặt lại mật khẩu cho em. Trước khi vào trang kế hoạch, em cần tự đặt một mật khẩu riêng mà chỉ em biết.'}
+          ? (staff
+              ? 'Thầy/cô đang mở link khôi phục từ email. Hãy đặt mật khẩu mới để tiếp tục.'
+              : 'Em đang mở link khôi phục từ email. Hãy đặt mật khẩu mới để tiếp tục.')
+          : (staff
+              ? 'Quản trị viên vừa cấp cho thầy/cô một mật khẩu tạm. Trước khi vào hệ thống, thầy/cô cần tự đặt một mật khẩu riêng.'
+              : 'Giáo viên vừa đặt lại mật khẩu cho em. Trước khi vào trang kế hoạch, em cần tự đặt một mật khẩu riêng mà chỉ em biết.')}
       </p>
 
       {mode !== 'recovery' && <>

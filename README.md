@@ -76,6 +76,30 @@ Luật được ép ở **ba tầng** để không thể bỏ qua bằng DevTool
 | Supabase Auth | Password policy của project | Mọi đường đổi mật khẩu, kể cả gọi API trực tiếp |
 | Edge Function | `student-change-password` | Thêm luật "không chứa MSHS" |
 
+### `includes("")` — lỗi khoá cứng mọi tài khoản giáo viên mới
+
+Luật mật khẩu có vế *"không được chứa MSHS"*, viết là `!password.includes(mshs)`.
+
+Giáo viên và quản trị viên **không có MSHS**, nên `mshs` là chuỗi rỗng. Mà trong JavaScript
+`"batky".includes("")` luôn trả về **true** — nên `!password.includes("")` luôn **false**, và cả
+luật luôn hỏng, với mọi mật khẩu.
+
+Triệu chứng nhìn rất khó hiểu: giao diện tick xanh đủ 6 điều kiện, hai ô mật khẩu khớp nhau, mà
+bấm nút vẫn ra thông báo "chưa đạt yêu cầu". Vì hai bên kiểm bằng **hai đoạn mã khác nhau**:
+`src/utils/password.js` có chốt chặn `!code ||` nên hiện đúng, còn bản gốc ở
+`supabase/functions/_shared/common.ts` thì không.
+
+Hệ quả: **mọi tài khoản giáo viên do quản trị viên tạo đều kẹt vĩnh viễn** ở màn hình bắt đổi
+mật khẩu — không vào được hệ thống, cũng không có đường vòng nào.
+
+Đã sửa ở bản gốc: `code === '' || !password.includes(code)`.
+
+Hai đường của **học sinh** chưa bao giờ hỏng vì luôn truyền MSHS 7 chữ số thật. Đã kiểm lại:
+mật khẩu chứa MSHS bị từ chối, mật khẩu ngắn bị từ chối, mật khẩu hợp lệ đổi được.
+
+Màn hình này cũng từng xưng hô lẫn lộn — tiêu đề ghi *"thầy/cô"* mà đoạn dưới vẫn *"em cần tự
+đặt"*. Nay lời văn đổi theo vai trò, và dòng "Không chứa MSHS" tự ẩn với người không có MSHS.
+
 ### Khi giáo viên đặt lại mật khẩu
 
 `teacher-reset-password` bật cờ `profiles.must_change_password`. Lần đăng nhập kế tiếp,

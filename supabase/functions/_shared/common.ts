@@ -16,15 +16,22 @@ export function json(body: unknown, status = 200) {
 export const STUDENT_EMAIL_DOMAIN = Deno.env.get('STUDENT_EMAIL_DOMAIN') ?? 'lsts.edu.vn'
 export const studentEmail = (mshs: string) => `${String(mshs).trim()}@${STUDENT_EMAIL_DOMAIN}`
 
-// Luật mật khẩu học sinh — bản gốc ở đây, frontend chỉ lặp lại để hiển thị.
-export function validStudentPassword(password: string, mshs: string) {
+// Luật mật khẩu — bản gốc ở đây, frontend chỉ lặp lại để hiển thị.
+//
+// `mshs` có thể RỖNG: giáo viên và quản trị viên không có MSHS. Phải chặn trường
+// hợp đó trước, vì `"batky".includes("")` luôn trả về true trong JavaScript —
+// nghĩa là `!password.includes('')` luôn false, và cả luật luôn hỏng. Đúng lỗi
+// này từng khoá cứng mọi tài khoản giáo viên mới ở màn hình bắt đổi mật khẩu:
+// giao diện tick xanh đủ 6 điều kiện, máy chủ thì từ chối không đường thoát.
+export function validStudentPassword(password: string, mshs?: string | null) {
+  const code = String(mshs ?? '').trim()
   return password.length >= 10
     && password.length <= 64
     && /[A-Z]/.test(password)
     && /[a-z]/.test(password)
     && /\d/.test(password)
     && !/\s/.test(password)
-    && !password.includes(mshs)
+    && (code === '' || !password.includes(code))
 }
 
 export const PASSWORD_RULE_MESSAGE =
