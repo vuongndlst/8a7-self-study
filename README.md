@@ -900,6 +900,51 @@ vừa có quyền giáo viên, học sinh bị chặn đúng chỗ, và số li�
 > dùng hệ thống thật nên số nhiệm vụ/phản tư đổi từng ngày; test cắm số cứng sẽ báo động
 > giả rồi mất luôn tác dụng.
 
+## 11bis. Chấm sao hàng loạt
+
+Một lớp 32 em, mỗi tuần vài tiết tự học. Mở từng popup để chấm là hàng trăm cú bấm mỗi tuần,
+trong khi phần lớn các tiết đều "đạt" — thứ đáng dừng lại đọc kỹ chỉ là số ít.
+
+Bấm ô **Chờ chấm sao** → thanh thao tác hiện nút *"Chọn N chờ chấm sao"* → *"Chấm sao N tiết"*.
+Toàn bộ ở [`supabase/schema-7-bulk-rating.sql`](supabase/schema-7-bulk-rating.sql).
+
+### Ba lằn ranh an toàn
+
+1. **Mặc định KHÔNG đè lên sao thầy cô đã chấm.** Chọn 25 dòng mà 3 dòng đã có 5 sao rồi bấm
+   "chấm 4 sao" — hạ điểm 3 em đó xuống là chuyện không ai ngờ tới. Muốn đè phải bật một công
+   tắc riêng, và công tắc đó nói rõ *sẽ đè lên mấy tiết*.
+2. **Chỉ chấm được tiết ĐÃ CÓ kết quả.** Tiết em chưa cập nhật thì không có gì để chấm; tạo
+   phản tư rỗng thay em là làm sai dữ liệu.
+3. **Tiết bị hệ thống tự chấm 1 sao được tính là "chưa chấm"** — đây chính là nhóm cần thầy cô
+   xem lại nhiều nhất, nên nó nằm trong tầm với của thao tác hàng loạt.
+
+Để trống ô nhận xét thì nhận xét cũ của từng tiết **được giữ nguyên**, không bị xoá.
+
+### Không nới quyền cho ai
+
+`bulk_rate_reflections` **không** dùng `security definer` — giống hệt `bulk_review_plans`. Nó chỉ
+gom nhiều lần UPDATE thành một lượt gọi; RLS và trigger `reflections_guard_columns` vẫn chạy đủ.
+
+Đã thử bằng phiên đăng nhập thật của học sinh gọi thẳng API: **HTTP 400, sao vẫn `null`**.
+
+### Hai lỗi phát hiện khi kiểm chứng
+
+**Đếm sai số tiết đã chấm.** Guard hoàn nguyên cột `rating` khi người gọi không có quyền, nhưng
+câu UPDATE vẫn coi như đã đụng vào dòng đó nên `RETURNING` vẫn trả về. Bản đầu đếm theo đó nên
+báo *"đã chấm 1"* cho cả tài khoản **học sinh** — dữ liệu không hề đổi, nhưng con số báo về thì
+sai. `RETURNING` trả giá trị **sau** khi BEFORE trigger chạy, nên lọc theo đúng số sao mong muốn
+là đếm được phần có hiệu lực thật; lệch nhau thì báo lỗi quyền thẳng.
+
+**Cờ tự động không bao giờ tắt.** `mark_late_result` bật `needs_recheck`, và `process_self_study_deadlines`
+bật `auto_evaluated` — nhưng không chỗ nào tắt chúng khi thầy cô chấm lại. Hậu quả: chấm xong,
+ô *"Bổ sung muộn"* và *"Hệ thống tự chấm"* vẫn đếm tiết đó, còn ô *"Đã chấm sao"* vẫn không đếm.
+Thầy cô làm xong việc mà bảng điều khiển vẫn báo còn việc.
+
+Trigger `trg_zz_clear_recheck` tắt cả hai cờ khi `rating_at` đổi. Bám vào `rating_at` thay vì tự
+kiểm quyền lần nữa: cột đó chỉ đổi khi guard đã xác nhận người chấm **có** quyền, nên hai chỗ
+không thể lệch nhau. Tên bắt đầu bằng `trg_zz` để chạy sau cùng — Postgres gọi trigger theo thứ
+tự bảng chữ cái.
+
 ## 11c. Chia sẻ sách
 
 Mỗi tuần một học sinh giới thiệu một cuốn sách trước lớp. Em nộp nội dung và link trình chiếu

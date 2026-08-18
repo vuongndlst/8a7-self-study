@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, ClipboardCheck, ClipboardCopy, Download, ExternalLink, KeyRound, LifeBuoy, MessageSquare, MessageSquareQuote, RefreshCw, Search, Shuffle, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, Check, ClipboardCheck, Star, ClipboardCopy, Download, ExternalLink, KeyRound, LifeBuoy, MessageSquare, MessageSquareQuote, RefreshCw, Search, Shuffle, UsersRound, X } from 'lucide-react'
 import { supabase, callFunction } from '../lib/supabase'
 import { selectIn, daysAgoISO, LOAD_WINDOWS } from '../lib/query'
 import { useAuth } from '../context/AuthContext'
@@ -41,6 +41,7 @@ export default function TeacherPage(){
   const [filters,setFilters]=useState({...CLEAR})
   const [selectedPlans,setSelectedPlans]=useState(new Set())
   const [bulkAction,setBulkAction]=useState(null)
+  const [bulkRate,setBulkRate]=useState(false)
   const [sortBy,setSortBy]=useState('date_desc')
   const [page,setPage]=useState(1)
   const [selected,setSelected]=useState(new Set())
@@ -142,7 +143,19 @@ export default function TeacherPage(){
 
   // Chỉ những kế hoạch đang hiển thị VÀ chưa duyệt mới là mục tiêu hợp lệ.
   const pendingInView=useMemo(()=>rows.filter(p=>p.review_status==='Chờ duyệt'),[rows])
+  // Chấm sao được nghĩa là ĐÃ CÓ kết quả mà chưa có sao thầy cô cho. Tiết em chưa
+  // cập nhật thì không có gì để chấm; tiết hệ thống tự chấm 1 sao thì tính là
+  // chưa chấm, vì đó chính là nhóm cần thầy cô xem lại nhiều nhất.
+  const rateableInView=useMemo(()=>rows.filter(p=>{
+    const r=reflections[p.id]
+    return r&&(r.rating==null||r.auto_evaluated)
+  }),[rows,reflections])
   const selectedList=useMemo(()=>rows.filter(p=>selectedPlans.has(p.id)),[rows,selectedPlans])
+  const selectedPending=useMemo(()=>selectedList.filter(p=>p.review_status==='Chờ duyệt'),[selectedList])
+  const selectedRateable=useMemo(()=>selectedList.filter(p=>{
+    const r=reflections[p.id]
+    return r&&(r.rating==null||r.auto_evaluated)
+  }),[selectedList,reflections])
   const togglePlan=(id)=>setSelectedPlans(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n})
   // Ô tick ở đầu bảng chỉ tác động lên TRANG đang xem; muốn cả bộ lọc thì dùng
   // nút "Chọn tất cả … chờ duyệt" ở thanh bên trên — nói rõ phạm vi để khỏi nhầm.
@@ -154,6 +167,7 @@ export default function TeacherPage(){
     return n
   })
   const selectAllPending=()=>setSelectedPlans(new Set(pendingInView.map(p=>p.id)))
+  const selectAllRateable=()=>setSelectedPlans(new Set(rateableInView.map(p=>p.id)))
   // Đổi bộ lọc thì bỏ chọn, tránh thao tác nhầm lên nhóm không còn nhìn thấy.
   useEffect(()=>{setSelectedPlans(new Set());setPage(1)},[filters,sortBy])
 
@@ -426,17 +440,27 @@ export default function TeacherPage(){
       <div>
         {selectedList.length>0
           ? <><strong>{selectedList.length}</strong> kế hoạch được chọn
-              {selectedList.length<pendingInView.length&&
-                <button className="link-button" onClick={selectAllPending}>Chọn tất cả {pendingInView.length} kế hoạch chờ duyệt đang hiển thị</button>}</>
-          : <span className="muted-text">Đang hiển thị <strong>{rows.length}</strong> kế hoạch · <strong>{pendingInView.length}</strong> chờ duyệt</span>}
+              {selectedRateable.length>0&&<small className="muted-text"> · {selectedRateable.length} chấm sao được</small>}</>
+          : <span className="muted-text">Đang hiển thị <strong>{rows.length}</strong> kế hoạch
+              {pendingInView.length>0&&<> · <strong>{pendingInView.length}</strong> chờ duyệt</>}
+              {rateableInView.length>0&&<> · <strong>{rateableInView.length}</strong> chờ chấm sao</>}</span>}
       </div>
       <div className="button-row">
+        {/* Hai nút "chọn tất cả" tách riêng cho hai việc khác nhau. Gộp một nút
+            thì thầy cô chọn nhầm nhóm rồi bấm duyệt/chấm lên đúng nhóm đó. */}
         {selectedList.length===0&&pendingInView.length>0&&
-          <button className="button primary" onClick={selectAllPending}><ClipboardCheck size={17}/> Chọn {pendingInView.length} kế hoạch chờ duyệt</button>}
+          <button className="button ghost" onClick={selectAllPending}><ClipboardCheck size={17}/> Chọn {pendingInView.length} chờ duyệt</button>}
+        {selectedList.length===0&&rateableInView.length>0&&
+          <button className="button primary" onClick={selectAllRateable}><Star size={17}/> Chọn {rateableInView.length} chờ chấm sao</button>}
         {selectedList.length>0&&<>
           <button className="button ghost" onClick={()=>setSelectedPlans(new Set())}>Bỏ chọn</button>
-          <button className="button ghost danger" onClick={()=>setBulkAction('Cần điều chỉnh')}>Yêu cầu điều chỉnh</button>
-          <button className="button primary" onClick={()=>setBulkAction('Đã duyệt')}><Check size={17}/> Duyệt {selectedList.length} kế hoạch</button>
+          {selectedPending.length>0&&<>
+            <button className="button ghost danger" onClick={()=>setBulkAction('Cần điều chỉnh')}>Yêu cầu điều chỉnh</button>
+            <button className="button ghost" onClick={()=>setBulkAction('Đã duyệt')}><Check size={17}/> Duyệt {selectedPending.length}</button>
+          </>}
+          {selectedRateable.length>0&&
+            <button className="button primary" onClick={()=>setBulkRate(true)}>
+              <Star size={17}/> Chấm sao {selectedRateable.length} tiết</button>}
         </>}
       </div>
     </div>}
@@ -554,6 +578,10 @@ export default function TeacherPage(){
       </div>}
     </section>}
 
+    {bulkRate&&<BulkRateModal plans={selectedRateable} students={studentMap} reflections={reflections}
+      onClose={()=>setBulkRate(false)}
+      onDone={()=>{setBulkRate(false);setSelectedPlans(new Set());load()}}/>}
+
     {bulkAction&&<BulkReviewModal action={bulkAction} plans={selectedList} studentMap={studentMap}
       onClose={()=>setBulkAction(null)}
       onDone={()=>{setBulkAction(null);setSelectedPlans(new Set());load()}}/>}
@@ -636,6 +664,99 @@ function BulkReviewModal({action,plans,studentMap,onClose,onDone}){
 function downloadCsv(lines,filename){
   const blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8'})
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;a.click();URL.revokeObjectURL(a.href)
+}
+
+// Chấm sao cho cả nhóm tiết đã chọn.
+//
+// Mặc định KHÔNG đè lên sao thầy cô đã chấm trước đó — thầy cô chọn 25 dòng mà 3
+// dòng đã có 5 sao rồi bấm "chấm 4 sao", hạ điểm 3 em đó xuống là chuyện không
+// ai ngờ tới. Muốn đè thì phải tick riêng một ô, và ô đó nói rõ sẽ đè lên mấy tiết.
+function BulkRateModal({plans,students,reflections,onClose,onDone}){
+  // null chứ không phải 0: RatingStars hiện nhãn khi value khác null, nên khởi
+  // tạo bằng 0 sẽ hiện "0/5 ·" trước cả khi thầy cô chọn gì.
+  const [rating,setRating]=useState(null)
+  const [comment,setComment]=useState('')
+  const [overwrite,setOverwrite]=useState(false)
+  const [busy,setBusy]=useState(false)
+  const [msg,setMsg]=useState('')
+  const [result,setResult]=useState(null)
+
+  // Nhóm đang bị hệ thống tự chấm 1 sao — đây thường là lý do chính thầy cô vào đây.
+  const tuDong=plans.filter(p=>reflections[p.id]?.auto_evaluated)
+  const daCham=plans.filter(p=>{const r=reflections[p.id];return r&&r.rating!=null&&!r.auto_evaluated})
+
+  const run=async()=>{
+    if(!rating)return setMsg('Chọn số sao trước đã.')
+    setBusy(true);setMsg('')
+    const {data,error}=await supabase.rpc('bulk_rate_reflections',{
+      p_plan_ids:plans.map(p=>p.id), p_rating:rating,
+      p_comment:comment.trim()||null, p_overwrite:overwrite,
+    })
+    setBusy(false)
+    if(error)return setMsg('Không chấm được: '+error.message)
+    setResult(data)
+  }
+
+  if(result)return <div className="modal-backdrop" onMouseDown={onDone}>
+    <div className="modal small" onMouseDown={e=>e.stopPropagation()}>
+      <div className="modal-head"><div><span className="eyebrow">KẾT QUẢ</span>
+        <h2>Đã chấm {result.da_cham} tiết</h2></div></div>
+      <ul className="summary-tasks">
+        <li>Đã chấm <strong>{result.da_cham}</strong> tiết {result.so_sao} sao.</li>
+        {result.bo_qua_da_cham>0&&<li><em>Bỏ qua {result.bo_qua_da_cham} tiết đã có sao thầy cô chấm trước đó.</em></li>}
+        {result.chua_co_ket_qua>0&&<li><em>Bỏ qua {result.chua_co_ket_qua} tiết học sinh chưa cập nhật kết quả.</em></li>}
+      </ul>
+      <div className="form-actions"><button className="button primary" onClick={onDone}>Xong</button></div>
+    </div></div>
+
+  return <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal" onMouseDown={e=>e.stopPropagation()}>
+      <div className="modal-head">
+        <div><span className="eyebrow">CHẤM SAO HÀNG LOẠT</span>
+          <h2>{plans.length} tiết được chọn</h2>
+          <p className="muted-text">Cùng một số sao cho cả nhóm. Tiết nào cần nhận xét riêng
+             thì thầy cô mở lẻ tiết đó sau.</p></div>
+        <button className="icon-button" onClick={onClose}>✕</button>
+      </div>
+
+      {tuDong.length>0&&<div className="notice compact"><Star size={16}/><span>
+        Trong đó có <strong>{tuDong.length} tiết bị hệ thống tự chấm 1 sao</strong> do quá hạn —
+        chấm ở đây sẽ ghi đè lên điểm tự động đó.
+      </span></div>}
+
+      <label>Số sao cho cả nhóm</label>
+      <RatingStars value={rating} onChange={setRating} size={30}/>
+
+      <label>Nhận xét chung (không bắt buộc)</label>
+      <textarea rows={3} value={comment} onChange={e=>setComment(e.target.value)}
+        placeholder="Cả lớp làm việc nghiêm túc trong tiết này."/>
+      <p className="muted-text small">Để trống thì nhận xét cũ của từng tiết được giữ nguyên,
+         không bị xoá đi.</p>
+
+      {daCham.length>0&&<div className="toggle-row compact">
+        <label className="switch">
+          <input type="checkbox" checked={overwrite} onChange={e=>setOverwrite(e.target.checked)}/><span/>
+        </label>
+        <div><strong>Chấm đè lên {daCham.length} tiết thầy cô đã chấm</strong>
+          <small>{overwrite
+            ? 'Đang BẬT — điểm cũ của những tiết đó sẽ bị thay bằng số sao ở trên.'
+            : 'Đang TẮT — những tiết đã có sao sẽ được giữ nguyên.'}</small></div>
+      </div>}
+
+      <div className="detail-box">
+        <strong>Sẽ chấm cho</strong>
+        <p className="muted-text small">{plans.slice(0,12).map(p=>students[p.student_id]?.full_name??'?').join(' · ')}
+          {plans.length>12?` … +${plans.length-12} tiết nữa`:''}</p>
+      </div>
+
+      {msg&&<div className="form-error">{msg}</div>}
+      <div className="form-actions">
+        <button className="button ghost" onClick={onClose}>Huỷ</button>
+        <button className="button primary large" disabled={busy||!rating} onClick={run}>
+          <Star size={17}/> {busy?'Đang chấm…':`Chấm ${rating||''} sao cho ${plans.length} tiết`}</button>
+      </div>
+    </div>
+  </div>
 }
 
 function Stat({label,value,alert,onClick,active}){
