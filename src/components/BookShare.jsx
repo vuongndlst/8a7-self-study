@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, CalendarClock, ChevronDown, ExternalLink, Link2, Presentation, Save, Search, Upload, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
@@ -58,7 +58,7 @@ export function CanvaButton({ url, label = 'Xem bài trình chiếu' }) {
 // ---------------------------------------------------------------------------
 //  THẺ CỦA HỌC SINH — luôn hiện cho tới khi em chia sẻ xong
 // ---------------------------------------------------------------------------
-export function MyBookShare() {
+export function MyBookShare({ openSignal, onSaved }) {
   const { context } = useAuth()
   const [row, setRow] = useState(null)
   const [form, setForm] = useState(null)
@@ -81,6 +81,15 @@ export function MyBookShare() {
   }
   useEffect(() => { if (context.bookShare) load(); else setLoaded(true) }, [context.bookShare, context.classId])
 
+  // Bấm "Nhập bài chia sẻ" trong popup nhắc việc thì mở sẵn thẻ ra và cuộn tới,
+  // chứ không bắt em tự đi tìm rồi bấm thêm một lần nữa.
+  const cardRef = useRef(null)
+  useEffect(() => {
+    if (!openSignal) return
+    setOpen(true)
+    requestAnimationFrame(() => cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  }, [openSignal])
+
   // Lớp không bật tính năng, hoặc em đã chia sẻ xong rồi → không hiện gì cả.
   if (!context.bookShare || !loaded || !row) return null
 
@@ -100,6 +109,7 @@ export function MyBookShare() {
     if (error) return setMsg('Chưa lưu được: ' + error.message)
     setMsg('✓ Đã lưu bài chia sẻ của em.')
     load()
+    onSaved?.()
   }
 
   const conLai = row.due_date ? daysTo(row.due_date) : null
@@ -110,7 +120,7 @@ export function MyBookShare() {
   // thì em dễ tưởng chỉ là một dòng thông báo.
   const goiY = row.book_title ? row.book_title : 'Bấm để nhập bài chia sẻ của em'
 
-  return <section className={`card book-card phase-${phase} ${open ? 'open' : ''}`}>
+  return <section ref={cardRef} className={`card book-card phase-${phase} ${open ? 'open' : ''}`}>
     <button type="button" className="book-summary" onClick={() => setOpen(!open)} aria-expanded={open}>
       <span className="book-sum-icon"><BookOpen size={20} /></span>
       <span className="book-sum-main">

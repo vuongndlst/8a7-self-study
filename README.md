@@ -1124,6 +1124,95 @@ Năm mốc nhắc, chạy trên `process_book_share_reminders()` lúc 08:00 gi�
 Hai bảng mới cũng bị thu hồi quyền `anon` như mục 17/18 — **0 bảng, 0 hàm**. Hàm trigger nằm ngoài
 whitelist nên phải revoke tay; kiểm tra thực tế bắt được đúng một hàm bị sót.
 
+## 11d. Quên đăng ký tự học — miễn trừ, miễn buổi, kỷ luật
+
+[`schema-8-attendance.sql`](supabase/schema-8-attendance.sql) và
+[`schema-9-terms.sql`](supabase/schema-9-terms.sql).
+
+### Mỗi lớp tự khai mốc của mình
+
+Hệ thống dùng cho toàn trường: mỗi lớp bắt đầu áp dụng ở một thời điểm khác nhau, và mốc học kỳ
+đổi theo từng năm. Nên đây là **ô nhập trên giao diện**, không phải hằng số trong mã nguồn.
+
+Tab **Kỷ luật** → giáo viên khai: ngày bắt đầu tính · số lần miễn trừ · đầu và cuối của **cả hai
+học kỳ**. Lớp chưa bật thì học sinh không thấy popup và hệ thống không ghi nhận gì.
+
+Ba quy tắc về khoảng đếm:
+
+1. **Bộ đếm tự về 0 khi sang học kỳ II** — `term_bounds()` trả về khoảng đang áp dụng.
+2. **Không bao giờ đếm trước `tracking_from`**, kể cả khi học kỳ bắt đầu sớm hơn. Lớp áp dụng
+   giữa chừng thì phần trước đó không tính.
+3. **Ngoài hai khoảng đã khai — nghỉ hè, nghỉ Tết, giữa hai học kỳ — không ghi nhận gì.**
+
+### Vì sao phải LƯU những lần quên thay vì đếm lại
+
+Lịch tự học của lớp có thể đổi giữa năm. Đếm lại theo lịch hiện tại sẽ làm những lần quên trong
+quá khứ **biến mất hoặc tự mọc thêm** — mà đây là dữ liệu dùng để kỷ luật học sinh, không được
+phép đổi sau lưng. Nên có bảng `attendance_misses`, ghi bởi cron lúc **23:00 giờ Việt Nam**.
+
+Chạy lúc 23:00 chứ không sớm hơn: lớp có thể đang bật *"cho phép đăng ký trễ"*, em đăng ký trong
+ngày vẫn phải được tính là có đăng ký.
+
+### Thang kỷ luật
+
+Tính theo **tổng số lần quên trong học kỳ**, không cộng dồn hình phạt — quên lần thứ 5 thì mức là
+"10 lượt", không phải 5 + 10.
+
+| Số lần | Mức |
+|---|---|
+| 1–3 | Được miễn trừ, không có kỷ luật |
+| Lần 4 | Lao động công ích 5 lượt |
+| Lần 5 | Lao động công ích 10 lượt |
+| Từ lần 6 | Thầy cô trao đổi với phụ huynh |
+
+Bảng quy định hiển thị **ngay trong popup** và dòng em đang ở được đánh dấu — học sinh đọc được
+luật đúng lúc bị nhắc, chứ không phải đi tìm trong trang hướng dẫn.
+
+### Miễn buổi — một cơ chế, hai tình huống
+
+`attendance_exemptions`: `mshs` NULL là **cả lớp** (thứ Sáu tiết 8–9 đi sự kiện), có giá trị là
+**riêng một em** (nghỉ ốm). `period` NULL là cả ngày.
+
+Ba điều đã đo bằng dữ liệu thật của 8A7 (thứ Sáu có tiết 8 và 9, 32 em):
+
+| Tình huống | Số lượt quên ghi nhận |
+|---|---|
+| Không miễn | **64** = 32 em × 2 tiết |
+| Miễn cả lớp | **0** |
+| Miễn riêng một em | **62** |
+| Miễn **sau khi** sổ đã ghi | lượt đã ghi bị **gỡ** |
+
+Trường hợp cuối quan trọng: giáo viên bấm miễn sau khi hết ngày là chuyện bình thường (em xin
+phép muộn), và lúc đó sổ đã ghi rồi — không gỡ thì em bị tính oan.
+
+`missing_registrations()` cũng phải tôn trọng lệnh miễn, nếu không giáo viên vừa bấm miễn cả lớp
+xong mở tab ra vẫn thấy 31 em bị gắn cờ thiếu — nút miễn nhìn như không có tác dụng.
+
+### Popup nhắc việc
+
+`StudentAlerts` gộp tối đa ba việc vào **một** popup, xếp theo mức cấp bách:
+
+| Việc | Khi nào | Nút |
+|---|---|---|
+| Chưa đăng ký tự học hôm nay | lớp có tiết mà em chưa có kế hoạch | *Đăng ký ngay* |
+| Sắp tới hạn nộp bài chia sẻ sách | **từ trước hạn một tuần**, cho tới khi nộp | *Nhập bài chia sẻ* |
+| Mức kỷ luật đang ở | đã quên ít nhất một lần | — |
+
+Đóng popup chỉ có tác dụng **trong phiên hiện tại** — lần sau vào lại vẫn hiện. Việc chưa xong thì
+không được phép tắt vĩnh viễn; chỉ khi em nộp bài / đăng ký xong thì nó mới thực sự biến mất.
+
+Hai nút đều đưa **thẳng tới chỗ cần làm**: mở form đăng ký và cuộn lên đầu, hoặc bung thẻ chia sẻ
+sách và cuộn tới. Bấm xong mà vẫn phải tự đi tìm thì nút không có ý nghĩa gì.
+
+### Dashboard giáo viên
+
+Ô **"Đang chịu kỷ luật"** trong hộp việc cần xử lý, đổi nhãn thành *"có em cần mời PH"* khi có em
+ở bậc cao nhất. Bấm vào mở tab **Kỷ luật** — ba ô tổng hợp theo mức, kèm bảng chi tiết.
+
+Sổ `attendance_misses` có RLS chặt hơn phần còn lại: **em chỉ đọc được dòng của chính mình**. Số
+lần quên của bạn khác là chuyện riêng của bạn ấy. Không ai ghi tay vào sổ được — policy ghi là
+`false`, chỉ cron và hàm miễn buổi đụng tới được.
+
 ## 12. Quyền dữ liệu
 
 **Học sinh** — chỉ đọc/ghi dữ liệu của chính mình; không đọc danh sách lớp; chỉ tạo kế

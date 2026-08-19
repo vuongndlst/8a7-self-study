@@ -710,3 +710,60 @@ th,td{padding:11px 12px}
   .canva-button{padding:14px}
   .book-modal .modal-head h2{font-size:22px}
 }
+
+/* ---------- v10: nhac viec, mien buoi, ky luat ---------- */
+.alert-modal{width:min(560px,100%)}
+.alert-item{display:flex;gap:13px;align-items:flex-start;padding:15px 16px;border-radius:15px;margin:12px 0;
+  border:1px solid var(--line);background:#fff}
+.alert-item.danger{background:var(--danger-bg);border-color:#f0cdcd}
+.alert-item.warn{background:var(--warn-bg);border-color:#eddcb4}
+.alert-icon{flex:0 0 auto;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:rgba(255,255,255,.75)}
+.alert-item.danger .alert-icon{color:#9b3333}
+.alert-item.warn .alert-icon{color:#8a5a12}
+.alert-item>div{flex:1;min-width:0}
+.alert-item strong{display:block;font-size:15.5px;line-height:1.3}
+.alert-item p{margin:5px 0 0;font-size:13px;line-height:1.55;color:#4a545b}
+.alert-item .button{margin-top:12px}
+.center{text-align:center}
+
+/* Bảng quy định — học sinh đọc được luật ngay lúc bị nhắc */
+.rule-table{margin:12px 0 4px;border:1px solid var(--line);border-radius:13px;overflow:hidden;background:#fff}
+.rule-caption{display:block;padding:9px 12px;background:#f6f8f9;font-size:11px;font-weight:800;
+  letter-spacing:.7px;text-transform:uppercase;color:var(--muted)}
+.rule-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid #eef1f2;font-size:13px}
+.rule-row>span{flex:0 0 110px;color:var(--muted)}
+.rule-row>strong{flex:1;font-weight:650}
+.rule-row em{font-style:normal;font-size:11px;font-weight:800;color:#9b3333;background:var(--danger-bg);
+  border-radius:20px;padding:4px 9px;white-space:nowrap}
+.rule-row.now{background:#fff7f5}
+
+/* Thẻ điểm danh thường trực trên trang học sinh */
+.attend-card{padding:0;margin:0 0 22px;overflow:hidden;border-left:4px solid var(--line)}
+.attend-card.tone-ok{border-left-color:var(--ok)}
+.attend-card.tone-warn{border-left-color:var(--warn)}
+.attend-card.tone-danger{border-left-color:var(--danger);background:#fffaf9}
+.attend-summary{display:flex;align-items:center;gap:14px;width:100%;text-align:left;font:inherit;
+  background:none;border:0;padding:14px 18px;cursor:pointer}
+.attend-summary:hover{background:rgba(0,0,0,.02)}
+.attend-count{flex:0 0 auto;min-width:62px;text-align:center}
+.attend-count strong{display:block;font-size:28px;line-height:1;letter-spacing:-1px}
+.attend-count small{display:block;font-size:10.5px;color:var(--muted);margin-top:3px}
+.attend-main{flex:1;min-width:0}
+.attend-main .eyebrow{display:block;font-size:10px;letter-spacing:1.1px}
+.attend-main>strong{display:block;font-size:16px;margin:4px 0 3px}
+.attend-main small{display:block;color:var(--muted);font-size:12px;line-height:1.5}
+.attend-body{padding:0 18px 16px;border-top:1px solid var(--line)}
+
+/* Form miễn buổi */
+.exempt-form{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:14px 0}
+.exempt-form>div{flex:0 0 auto;min-width:150px}
+.exempt-form>div.grow{flex:1 1 240px}
+.exempt-form label{display:block;margin:0 0 5px;font-size:12px;font-weight:700;color:#4a545b}
+.exempt-form input,.exempt-form select{margin:0;width:100%}
+
+@media(max-width:700px){
+  .alert-item{flex-direction:column;gap:9px}
+  .rule-row{flex-wrap:wrap}
+  .rule-row>span{flex:0 0 100%}
+  .exempt-form>div{min-width:100%}
+}

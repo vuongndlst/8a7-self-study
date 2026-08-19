@@ -14,6 +14,7 @@ import SessionRegister from '../components/SessionRegister'
 import Avatar, { AvatarUploader } from '../components/Avatar'
 import { StudentAnalytics } from '../components/Analytics'
 import { MyBookShare } from '../components/BookShare'
+import StudentAlerts, { MyAttendance } from '../components/StudentAlerts'
 
 const activityOptions=['Bài tập cá nhân','Ôn tập','Công việc nhóm','Đọc sách','Chuẩn bị nội dung chia sẻ','Khác']
 const subjectOptions=['Toán','Ngữ văn','Tiếng Anh','Khoa học tự nhiên','Lịch sử & Địa lý','GDCD','Tin học','Công nghệ','Nghệ thuật','Khác']
@@ -38,6 +39,9 @@ export default function StudentPage(){
   const [sortBy,setSortBy]=useState('moi_nhat')
   const [search,setSearch]=useState('')
   const [page,setPage]=useState(1)
+  // Đếm tăng để bắt popup và thẻ điểm danh nạp lại sau khi em vừa làm xong việc.
+  const [alertKey,setAlertKey]=useState(0)
+  const [openBook,setOpenBook]=useState(0)
 
   const load=async()=>{
     if(!profile?.id)return
@@ -190,15 +194,23 @@ export default function StudentPage(){
       </button>)}
     </section>}
 
+    {/* Popup nhắc việc: chưa đăng ký hôm nay, sắp tới hạn nộp bài chia sẻ sách,
+        và mức kỷ luật đang ở. Hiện lại MỖI LẦN vào trang cho tới khi việc xong. */}
+    <StudentAlerts reloadKey={alertKey}
+      onRegister={()=>{setShowForm(true);requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'smooth'}))}}
+      onOpenBook={()=>setOpenBook(k=>k+1)}/>
+
     {/* Lượt chia sẻ sách LUÔN hiện cho tới khi em chia sẻ xong — đây là việc có
         hạn chót riêng, không được để lẫn vào danh sách tiết tự học. */}
-    <MyBookShare/>
+    <MyBookShare openSignal={openBook} onSaved={()=>setAlertKey(k=>k+1)}/>
+
+    <MyAttendance reloadKey={alertKey}/>
 
     {newComments>0&&<div className="notice"><MessageSquareQuote size={18}/><span>Giáo viên đã nhận xét <strong>{newComments}</strong> lần phản tư của em.</span></div>}
     {message&&<div className="notice"><ShieldCheck size={18}/><span>{message}</span></div>}
     {showForm&&<SessionRegister
       onCancel={()=>setShowForm(false)}
-      onDone={()=>{setShowForm(false);setMessage('✓ Đã đăng ký buổi tự học.');load()}}/>}
+      onDone={()=>{setShowForm(false);setMessage('✓ Đã đăng ký buổi tự học.');load();setAlertKey(k=>k+1)}}/>}
 
     <section className="section-block" ref={listRef}>
       <div className="section-title"><div>

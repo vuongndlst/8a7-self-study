@@ -14,6 +14,7 @@ import RosterPanel from '../components/RosterPanel'
 import ClassSwitcher from '../components/ClassSwitcher'
 import TeacherOnboarding from '../components/TeacherOnboarding'
 import { ClassAnalytics, StudentAnalytics } from '../components/Analytics'
+import { DisciplineBoard, AttendancePolicyPanel } from '../components/Attendance'
 
 const PAGE_SIZE = 25
 
@@ -100,6 +101,17 @@ export default function TeacherPage(){
     setLoading(false)
   }
   useEffect(()=>{load()},[context.classId,windowDays])
+
+  // Em nào đang lao động công ích / phải mời phụ huynh. Nạp riêng vì bảng này
+  // đếm theo HỌC KỲ, không theo khoảng ngày đang nạp của dashboard.
+  const [disc,setDisc]=useState([])
+  useEffect(()=>{
+    if(!context.classId)return setDisc([])
+    supabase.rpc('class_attendance_board',{p_class:context.classId})
+      .then(({data})=>setDisc(data??[]))
+  },[context.classId,view])
+  const discCount=disc.filter(r=>r.bac>=1).length
+  const discParent=disc.filter(r=>r.bac===3).length
 
 
   const studentMap=useMemo(()=>Object.fromEntries(students.map(s=>[s.id,s])),[students])
@@ -343,6 +355,9 @@ export default function TeacherPage(){
             active={filters.recheck==='co'}/>
       <Stat label="Chưa lập KH ngày mai" value={noPlanTomorrow.length} alert={noPlanTomorrow.length>0}
             onClick={()=>setView('missing')} active={view==='missing'}/>
+      {disc.length>0&&<Stat label={discParent>0?'Kỷ luật · có em cần mời PH':'Đang chịu kỷ luật'}
+            value={discCount} alert={discCount>0}
+            onClick={()=>setView('discipline')} active={view==='discipline'}/>}
     </section>
 
     <div className="segmented view-switch">
@@ -352,11 +367,16 @@ export default function TeacherPage(){
       <button type="button" className={view==='roster'?'active':''} onClick={()=>setView('roster')}>Học sinh</button>
       <button type="button" className={view==='missing'?'active':''} onClick={()=>setView('missing')}>HS chưa đăng ký</button>
       <button type="button" className={view==='schedule'?'active':''} onClick={()=>setView('schedule')}>Lịch tự học</button>
+      <button type="button" className={view==='discipline'?'active':''} onClick={()=>setView('discipline')}>Kỷ luật</button>
       <button type="button" className={view==='assistants'?'active':''} onClick={()=>setView('assistants')}>Trợ giảng</button>
     </div>
 
     {view==='schedule'&&<ClassScheduleSettings classId={context.classId} className={context.className}/>}
-    {view==='missing'&&<MissingRegistrations classId={context.classId}/>}
+    {view==='missing'&&<MissingRegistrations classId={context.classId} roster={roster}/>}
+    {view==='discipline'&&<>
+      <DisciplineBoard classId={context.classId} className={context.className}/>
+      <AttendancePolicyPanel classId={context.classId} className={context.className}/>
+    </>}
     {view==='roster'&&<RosterPanel classId={context.classId} className={context.className} yearName={context.yearName}/>}
 
     {/* Số liệu MÔ TẢ (không phải việc cần làm) sống ở tab Phân tích. */}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { CalendarClock, Clock, Lock, UserX } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { todayISO } from '../utils/date'
+import { ExemptionPanel } from './Attendance'
 
 const WEEKDAYS = [
   [1, 'Thứ Hai'], [2, 'Thứ Ba'], [3, 'Thứ Tư'], [4, 'Thứ Năm'],
@@ -133,7 +134,7 @@ export function ClassScheduleSettings({ classId, className }) {
 }
 
 // Tab "HS chưa đăng ký": ai chưa có kế hoạch cho ngày được chọn.
-export function MissingRegistrations({ classId }) {
+export function MissingRegistrations({ classId, roster }) {
   const [date, setDate] = useState(todayISO())
   const [missing, setMissing] = useState([])
   const [checking, setChecking] = useState(false)
@@ -191,6 +192,10 @@ export function MissingRegistrations({ classId }) {
       Sang tab <strong>Lịch tự học</strong> để khai cho chính xác theo từng tiết.
     </p>}
     {msg && <div className={msg.startsWith('✓') ? 'notice compact' : 'form-error'}>{msg}</div>}
+
+    {/* Nút miễn đặt NGAY TRONG tab này, cùng chỗ với danh sách em đang bị gắn
+        cờ thiếu — thấy vấn đề ở đâu thì xử lý luôn ở đó. */}
+    <ExemptionPanel classId={classId} roster={roster} date={date} onChanged={() => check(date)} />
 
     {checking ? <div className="empty-state">Đang kiểm tra…</div>
       : list.length === 0
