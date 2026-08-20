@@ -5,7 +5,7 @@ export default function StatusBadge({ value, label }) {
     'Cao': 'danger', 'Trung bình': 'warning', 'Thấp': 'muted',
     'Chờ duyệt': 'warning', 'Đã duyệt': 'success', 'Từ chối': 'danger', 'Không dùng': 'muted',
     // Tiến độ cập nhật kết quả — suy ra từ dữ liệu, không nhập tay.
-    'Chưa tới buổi': 'muted', 'Đang chờ cập nhật': 'warning',
+    'Chưa tới buổi': 'muted', 'Đang thực hiện': 'muted', 'Đang chờ cập nhật': 'warning',
     'Trễ hạn cập nhật': 'danger', 'Đã hoàn thành': 'success', 'Hệ thống tự đánh giá': 'danger',
     'Cần xem lại': 'warning',
     // Không dùng thiết bị điện tử thì không phải qua tay giáo viên.

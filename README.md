@@ -688,13 +688,15 @@ Vòng lặp Plan → Do → **Update** → Reflect hay đứt ở bước 3: lú
 ### Đồng hồ đếm hạn
 
 ```text
-mốc bắt đầu = MUỘN HƠN giữa (lúc đăng ký) và (22:00 ngày tự học)
-trễ hạn      = mốc bắt đầu + 48 giờ
-tự đánh giá  = mốc bắt đầu + 120 giờ
+mở cập nhật  = MUỘN HƠN giữa (lúc đăng ký) và (giờ bắt đầu tiết)
+mốc đếm hạn  = MUỘN HƠN giữa (lúc đăng ký) và (giờ kết thúc tiết cuối)
+trễ hạn      = mốc đếm hạn + 48 giờ
+tự đánh giá  = mốc đếm hạn + 120 giờ
 ```
 
-Lấy mốc muộn hơn để em đăng ký trước 10 ngày **không** bị đánh trễ trước cả ngày học.
-Ba con số nằm ở bảng `app_settings`, đổi quy định thì sửa một dòng, không phải sửa code.
+Học sinh được cập nhật từ khi tiết bắt đầu nên nếu hoàn thành sau 20 phút vẫn ghi kết quả
+ngay được. Popup chỉ nhắc sau giờ kết thúc thật của tiết; nhiệm vụ kéo dài hai tiết dùng giờ
+kết thúc của tiết thứ hai. Hai thời hạn 48/120 giờ nằm ở `app_settings`.
 
 ### Trạng thái tiến độ
 
@@ -702,8 +704,9 @@ Suy ra từ dữ liệu, không nhập tay — hàm `progress_status()` và view
 
 | Trạng thái | Khi nào |
 |---|---|
-| Chưa tới buổi | Chưa tới mốc bắt đầu đếm |
-| Đang chờ cập nhật | Đã qua buổi, còn trong 48 giờ |
+| Chưa tới buổi | Chưa tới giờ bắt đầu tiết |
+| Đang thực hiện | Tiết đã bắt đầu nhưng chưa kết thúc; học sinh đã có thể cập nhật |
+| Đang chờ cập nhật | Đã hết tiết, còn trong 48 giờ |
 | Trễ hạn cập nhật | Quá 48 giờ, chưa có kết quả |
 | Hệ thống tự đánh giá | Quá 120 giờ → tự ghi 1 sao |
 | Đã hoàn thành | Đã có kết quả |

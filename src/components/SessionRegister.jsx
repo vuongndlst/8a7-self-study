@@ -3,6 +3,7 @@ import { AlertTriangle, CalendarDays, Check, ClipboardList, Laptop, Layers, Lock
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { isLateRegistration, todayISO } from '../utils/date'
+import { periodTimeLabel } from '../utils/schoolSchedule'
 import { isoWeekday } from './ClassSchedule'
 
 const SUBJECTS = ['Toán', 'Ngữ văn', 'Tiếng Anh', 'Khoa học tự nhiên', 'Lịch sử & Địa lý',
@@ -194,7 +195,9 @@ export default function SessionRegister({ onDone, onCancel }) {
                     const ok = allowedPeriods.includes(n)
                     return <button key={n} type="button" disabled={!ok}
                       className={`period-cell ${period === n ? 'on' : ''} ${ok ? '' : 'off'}`}
-                      onClick={() => setPeriod(n)} aria-pressed={period === n}>{n}</button>
+	                      onClick={() => setPeriod(n)} aria-pressed={period === n}>
+                        <strong>Tiết {n}</strong><small>{periodTimeLabel(n)}</small>
+                      </button>
                   })}
                 </div>
                 {hasSchedule && <p className="muted-text small">Chỉ hiện những tiết lớp mình được phân giờ tự học.</p>}

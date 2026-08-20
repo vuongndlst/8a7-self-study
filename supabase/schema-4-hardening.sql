@@ -88,7 +88,8 @@ begin
         'missing_registrations','bulk_review_plans',
         'class_analytics','student_analytics','school_analytics',
         'year_bounds','default_range','setting_bool','setting_text',
-        'norm_mshs','norm_name','vn_today','result_clock_start'
+        'norm_mshs','norm_name','vn_today','study_period_start','study_period_end',
+        'result_available_at','result_clock_start','progress_status'
       )
   loop
     execute format('grant execute on function %s to authenticated', r.sig);

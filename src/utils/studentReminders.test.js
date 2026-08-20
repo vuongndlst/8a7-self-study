@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isReflectionDue, reflectionReminder } from './studentReminders.js'
+import { canUpdateReflection, isReflectionDue, reflectionReminder } from './studentReminders.js'
 
 test('chỉ nhắc phản tư sau khi buổi tự học kết thúc', () => {
   assert.equal(isReflectionDue('Chưa tới buổi'), false)
@@ -23,4 +23,11 @@ test('không nhắc nhiệm vụ đã có phần nhìn lại', () => {
   assert.equal(result.pending, 1)
   assert.equal(result.overdue, 1)
   assert.deepEqual([...result.planIds], ['pending', 'late'])
+})
+
+test('cho cập nhật từ khi tiết bắt đầu, không cần chờ tiết kết thúc', () => {
+  const start = '2026-08-21T00:40:00.000Z' // 07:40 giờ Việt Nam
+  assert.equal(canUpdateReflection(start, Date.parse('2026-08-21T00:39:59.999Z')), false)
+  assert.equal(canUpdateReflection(start, Date.parse(start)), true)
+  assert.equal(canUpdateReflection(start, Date.parse('2026-08-21T01:00:00.000Z')), true)
 })

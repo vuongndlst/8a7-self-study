@@ -30,18 +30,18 @@ export default function GuidePage() {
     <section className="card deadline-card">
       <div className="deadline-head"><Clock size={22} /><div>
         <span className="eyebrow">QUY TẮC QUAN TRỌNG NHẤT</span>
-        <h2>Nhớ cập nhật kết quả sau giờ tự học</h2>
+        <h2>Cập nhật kết quả ngay khi em làm xong</h2>
       </div></div>
       <p>Đăng ký kế hoạch mới là một nửa. Nửa còn lại là quay lại ghi xem em đã làm được đến đâu — đó mới là phần giúp em nhìn ra mình đang tiến bộ thế nào.</p>
 
       <div className="timeline-rule">
         <div><span className="step-dot ok">1</span><div>
-          <strong>Ngay sau giờ tự học</strong>
-          <small>Hệ thống sẽ nhắc và đưa em tới đúng nhiệm vụ. Chọn kết quả rồi ghi vài dòng; thường chỉ mất khoảng một phút.</small>
+          <strong>Từ khi tiết tự học bắt đầu</strong>
+          <small>Nếu hoàn thành sớm, kể cả mới học khoảng 20 phút, em có thể cập nhật ngay. Không cần chờ hết tiết.</small>
         </div></div>
         <div><span className="step-dot warn">2</span><div>
           <strong>Sau 2 ngày mà chưa cập nhật</strong>
-          <small>Tiết đó chuyển sang <em>Trễ hạn cập nhật</em> và em nhận một thông báo nhắc.</small>
+          <small>Thời gian được tính từ lúc tiết học kết thúc. Tiết đó chuyển sang <em>Trễ hạn cập nhật</em> và em nhận thêm thông báo.</small>
         </div></div>
         <div><span className="step-dot danger">3</span><div>
           <strong>Sau 5 ngày mà vẫn chưa cập nhật</strong>

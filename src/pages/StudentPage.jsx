@@ -6,7 +6,8 @@ import { supabase, callFunction } from '../lib/supabase'
 import { shrinkImage } from '../lib/image'
 import { selectIn } from '../lib/query'
 import { formatDate, registrationStatus, todayISO } from '../utils/date'
-import { isReflectionDue, reflectionReminder } from '../utils/studentReminders'
+import { canUpdateReflection, isReflectionDue, reflectionReminder } from '../utils/studentReminders'
+import { sessionTimeLabel } from '../utils/schoolSchedule'
 import { passwordChecks, validateStudentPassword } from '../utils/password'
 import StatusBadge from '../components/StatusBadge'
 import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
@@ -58,7 +59,7 @@ export default function StudentPage(){
         selectIn('reflections','*','plan_id',ids),
         selectIn('evidence','*','plan_id',ids,q=>q.order('created_at',{ascending:true})),
         // Trạng thái tiến độ do CSDL tính — giao diện không tự suy diễn để khỏi lệch.
-        selectIn('plan_status','plan_id,progress,overdue_at,auto_evaluate_at','plan_id',ids)
+        selectIn('plan_status','plan_id,progress,available_at,clock_start,overdue_at,auto_evaluate_at','plan_id',ids)
       ])
       setReflections(Object.fromEntries(r.map(x=>[x.plan_id,x])))
       const grouped={};e.forEach(x=>{(grouped[x.plan_id] ||= []).push(x)});setEvidence(grouped)
@@ -66,6 +67,17 @@ export default function StudentPage(){
     }else{setReflections({});setEvidence({});setStatus({})}
   }
   useEffect(()=>{load()},[profile?.id])
+
+  // Nếu trang đang mở qua giờ bắt đầu/kết thúc một tiết, nạp lại đúng tại mốc
+  // gần nhất để nút cập nhật và popup tự xuất hiện, không bắt em bấm F5.
+  useEffect(()=>{
+    const now=Date.now()
+    const next=Object.values(status).flatMap(s=>[s.available_at,s.clock_start])
+      .map(x=>Date.parse(x)).filter(x=>Number.isFinite(x)&&x>now).sort((a,b)=>a-b)[0]
+    if(!next)return
+    const timer=setTimeout(load,Math.min(next-now+1000,2147483647))
+    return()=>clearTimeout(timer)
+  },[status])
 
   // Bấm một thông báo ở chuông thì mở luôn popup của đúng nhiệm vụ đó. Phải đợi
   // `plans` tải xong mới tìm được, nên hiệu ứng này phụ thuộc cả vào plans.
@@ -256,7 +268,7 @@ export default function StudentPage(){
 
     {openPlan&&(openPlan.study_date>todayISO()
       ?<EditPlanModal plan={openPlan} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>
-      :<ReflectionModal plan={openPlan} progress={status[openPlan.id]?.progress} existing={reflections[openPlan.id]} evidence={evidence[openPlan.id]||[]} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>)}
+      :<ReflectionModal plan={openPlan} progress={status[openPlan.id]?.progress} availableAt={status[openPlan.id]?.available_at} existing={reflections[openPlan.id]} evidence={evidence[openPlan.id]||[]} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>)}
     {showPassword&&<ChangePasswordModal mshs={profile?.mshs} onClose={()=>setShowPassword(false)}/>}
     {showAvatar&&<AvatarUploader onClose={()=>setShowAvatar(false)}/>}
     {showChat&&<div className="modal-backdrop" onMouseDown={()=>setShowChat(false)}>
@@ -278,6 +290,7 @@ function FilterChip({value,now,set,label,n,alert}){
 // Một thẻ = một BUỔI tự học, bên trong liệt kê các nhiệm vụ của buổi đó.
 function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
   const {study_date,period,tasks}=session
+  const sessionSpan=Math.max(...tasks.map(t=>t.span||1))
   const editable=study_date>todayISO()
   const regStatus=registrationStatus(study_date,tasks[0]?.created_at)
   // Trạng thái buổi suy ra từ các nhiệm vụ — giống hệt cách CSDL tính.
@@ -303,7 +316,7 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
 
   return <article className={`card session-card ${tone} ${needsResult?'needs-result':''}`}>
     <div className="plan-card-top">
-      <span className="date-chip">{formatDate(study_date)} · Tiết {period}</span>
+	      <span className="date-chip">{formatDate(study_date)} · Tiết {period} · {sessionTimeLabel(period,sessionSpan)}</span>
       <span className="plan-card-actions">
         {needsResult&&<span className="pill-todo">Chưa có kết quả</span>}
         <StatusBadge value={regStatus}/>
@@ -321,6 +334,7 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
     <ul className="session-tasks">{tasks.map(t=>{
       const r=reflections[t.id];const st=status[t.id];const ev=evidence[t.id]||[]
 	      const taskTodo=!r&&isReflectionDue(st?.progress)
+        const canUpdate=!r&&canUpdateReflection(st?.available_at)
       return <li key={t.id} className={taskTodo?'task-todo':''}>
         <button type="button" className={`task-row ${ratingTone(r?.rating)} ${taskTodo?'todo':''}`} onClick={()=>onOpen(t)}>
           <span className="task-row-main">
@@ -338,13 +352,13 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
           </span>
           <ChevronDown size={15}/>
         </button>
-        {/* Cập nhật kết quả là việc quan trọng nhất sau giờ tự học — cho nó một
+	        {/* Cập nhật kết quả là việc quan trọng từ khi em làm xong — cho nó một
             nút riêng, to rõ, thay vì bắt em đoán rằng bấm vào dòng sẽ ra. */}
 	        {!editable&&r
 	          ? <button type="button" className="button ghost task-cta" onClick={()=>onOpen(t)}>
 	              <MessageSquareQuote size={16}/> Xem lại / bổ sung kết quả
 	            </button>
-	          : taskTodo&&<button type="button" className="button primary task-cta" onClick={()=>onOpen(t)}>
+	          : canUpdate&&<button type="button" className="button primary task-cta" onClick={()=>onOpen(t)}>
 	              <FileUp size={18}/> Cập nhật kết quả
 	            </button>}
         {editable&&<button type="button" className="button ghost task-cta" onClick={()=>onOpen(t)}>
@@ -408,7 +422,7 @@ function EditPlanModal({plan,onClose,onSaved}){
   </div></div>
 }
 
-function ReflectionModal({plan,progress,existing,evidence,onClose,onSaved}){
+function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,onSaved}){
   const [form,setForm]=useState({completion_status:existing?.completion_status||'Hoàn thành',note:existing?.note||'',need_help:existing?.need_help||false,help_note:existing?.help_note||''})
   const [ack,setAck]=useState(existing?.student_ack_note||'')
   const [ackBusy,setAckBusy]=useState(false)
@@ -416,7 +430,7 @@ function ReflectionModal({plan,progress,existing,evidence,onClose,onSaved}){
   const [link,setLink]=useState('');const [file,setFile]=useState(null);const [note,setNote]=useState('')
   const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('')
   const lowRating=existing?.rating!=null&&existing.rating<=2
-  const canReflect=Boolean(existing)||isReflectionDue(progress)||progress==='Hệ thống tự đánh giá'
+  const canReflect=Boolean(existing)||canUpdateReflection(availableAt)||isReflectionDue(progress)||progress==='Hệ thống tự đánh giá'
 
   const saveAck=async()=>{
     setAckMsg('')
@@ -431,7 +445,7 @@ function ReflectionModal({plan,progress,existing,evidence,onClose,onSaved}){
 
   const save=async()=>{
     setBusy(true);setMsg('')
-    if(!canReflect){setBusy(false);return setMsg('Em có thể cập nhật kết quả sau khi buổi tự học kết thúc.')}
+    if(!canReflect){setBusy(false);return setMsg('Em có thể cập nhật kết quả từ khi tiết tự học bắt đầu.')}
     if(form.note.trim().length<10){setBusy(false);return setMsg('Hãy viết ít nhất 10 ký tự để nhìn lại em đã làm được gì.')}
     const additions=(link.trim()?1:0)+(file?1:0)+(note.trim()?1:0)
     if(evidence.length+additions>3){setBusy(false);return setMsg('Tối đa 3 minh chứng cho mỗi tiết.')}
@@ -537,7 +551,7 @@ function ReflectionModal({plan,progress,existing,evidence,onClose,onSaved}){
     </div>
     {msg&&<div className="form-error">{msg}</div>}
     <div className="form-actions"><button className="button ghost" onClick={onClose}>Đóng</button><button className="button primary big" onClick={save} disabled={busy}><FileUp size={19}/>{busy?'Đang lưu…':'Lưu kết quả'}</button></div>
-    </>:<div className="detail-box reflection-not-ready"><strong>Chưa tới lúc cập nhật kết quả</strong><p>Em có thể quay lại sau khi buổi tự học kết thúc. Lúc đó hệ thống sẽ nhắc và đưa em tới đúng nhiệm vụ này.</p><button className="button ghost" onClick={onClose}>Đã hiểu</button></div>}
+    </>:<div className="detail-box reflection-not-ready"><strong>Tiết tự học chưa bắt đầu</strong><p>Em có thể cập nhật ngay từ khi tiết bắt đầu; không cần chờ đến cuối tiết. Sau giờ học, nếu em chưa cập nhật thì hệ thống mới nhắc.</p><button className="button ghost" onClick={onClose}>Đã hiểu</button></div>}
   </div></div>
 }
 

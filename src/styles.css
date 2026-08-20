@@ -222,7 +222,7 @@ tbody tr.clickable.picked:hover td{background:var(--brand-bg2)}
 .reg-num{flex:0 0 auto;width:28px;height:28px;border-radius:50%;background:var(--brand-dark);color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px;margin-top:2px}
 .reg-step input[type=date]{max-width:220px}
 .period-grid{display:grid;grid-template-columns:repeat(3,minmax(0,86px));gap:8px;margin:6px 0 4px}
-.period-cell{height:52px;border:1px solid var(--line);background:#fff;border-radius:13px;font-size:17px;font-weight:750;color:#3d484f;cursor:pointer;transition:.15s}
+.period-cell{min-height:58px;border:1px solid var(--line);background:#fff;border-radius:13px;color:#3d484f;cursor:pointer;transition:.15s;display:grid;place-content:center;gap:2px}.period-cell strong{font-size:13px}.period-cell small{font-size:9px;font-weight:650;color:var(--muted)}.period-cell.on small{color:rgba(255,255,255,.78)}
 .period-cell:hover:not(.off){border-color:var(--brand);background:#f7f9fa}
 .period-cell.on{background:var(--brand-dark);border-color:var(--brand-dark);color:#fff;box-shadow:0 6px 16px rgba(23,63,49,.2)}
 .period-cell.off{opacity:.3;cursor:not-allowed;background:#f4f5f6}

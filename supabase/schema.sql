@@ -365,7 +365,7 @@ create table if not exists public.app_settings (
 insert into public.app_settings (key, value_int, note) values
   ('overdue_hours', 48,  'Sau bao nhiêu giờ kể từ khi hết buổi tự học mà chưa cập nhật kết quả thì coi là trễ hạn'),
   ('auto_rating_hours', 120, 'Sau bao nhiêu giờ thì hệ thống tự đánh giá 1 sao'),
-  ('period_end_hour', 22, 'Giờ (theo giờ VN) coi như kết thúc buổi tự học trong ngày — mốc bắt đầu đếm hạn')
+  ('period_end_hour', 22, 'Thiết lập cũ, chỉ giữ để tương thích; mốc cập nhật hiện dùng giờ bắt đầu/kết thúc thật của từng tiết')
 on conflict (key) do nothing;
 
 -- 10 mẫu phản hồi thiện chí dùng khi hệ thống tự đánh giá.
@@ -911,37 +911,62 @@ drop trigger if exists trg_reflections_guard_columns on public.reflections;
 create trigger trg_reflections_guard_columns before update on public.reflections
 for each row execute function public.reflections_guard_columns();
 
--- ---------- Đồng hồ đếm hạn cập nhật kết quả ----------
--- Mốc bắt đầu đếm = MUỘN HƠN giữa (lúc đăng ký) và (lúc kết thúc buổi tự học).
--- Nhờ vậy em đăng ký trước 10 ngày cũng không bị đánh trễ trước cả ngày học.
-create or replace function public.result_clock_start(p_study_date date, p_created_at timestamptz)
-returns timestamptz language sql stable set search_path = public as $$
-  select greatest(
-    p_created_at,
-    (p_study_date::text || ' ' || lpad(coalesce((select value_int from public.app_settings where key='period_end_hour'), 22)::text, 2, '0') || ':00:00')
-      ::timestamp at time zone 'Asia/Ho_Chi_Minh'
-  );
+-- ---------- Thời gian từng tiết và đồng hồ cập nhật kết quả ----------
+-- Có HAI mốc khác nhau:
+--   available_at = giờ BẮT ĐẦU tiết: học xong sớm vẫn cập nhật ngay được.
+--   clock_start  = giờ KẾT THÚC tiết cuối của nhiệm vụ: từ đây mới nhắc và đếm hạn.
+create or replace function public.study_period_start(p_study_date date, p_period smallint)
+returns timestamptz language sql immutable strict set search_path = public as $$
+  select (p_study_date + case p_period
+    when 1 then time '07:40' when 2 then time '08:25' when 3 then time '09:20'
+    when 4 then time '10:05' when 5 then time '10:50' when 6 then time '13:15'
+    when 7 then time '14:00' when 8 then time '14:55' when 9 then time '15:40'
+  end) at time zone 'Asia/Ho_Chi_Minh';
+$$;
+
+create or replace function public.study_period_end(p_study_date date, p_period smallint, p_span smallint default 1)
+returns timestamptz language sql immutable strict set search_path = public as $$
+  select (p_study_date + case least(9, p_period + greatest(p_span, 1) - 1)
+    when 1 then time '08:20' when 2 then time '09:05' when 3 then time '10:00'
+    when 4 then time '10:45' when 5 then time '11:30' when 6 then time '13:55'
+    when 7 then time '14:40' when 8 then time '15:35' when 9 then time '16:20'
+  end) at time zone 'Asia/Ho_Chi_Minh';
+$$;
+
+create or replace function public.result_available_at(p_study_date date, p_period smallint, p_created_at timestamptz)
+returns timestamptz language sql immutable strict set search_path = public as $$
+  select greatest(p_created_at, public.study_period_start(p_study_date, p_period));
+$$;
+
+create or replace function public.result_clock_start(
+  p_study_date date, p_period smallint, p_span smallint, p_created_at timestamptz
+) returns timestamptz language sql immutable strict set search_path = public as $$
+  select greatest(p_created_at, public.study_period_end(p_study_date, p_period, p_span));
 $$;
 
 -- Trạng thái tiến độ, suy ra từ dữ liệu chứ không nhập tay.
 --   Chưa tới buổi · Đang làm · Trễ hạn cập nhật · Đã hoàn thành · Hệ thống tự đánh giá
 create or replace function public.progress_status(
-  p_study_date date, p_created_at timestamptz,
+  p_study_date date, p_period smallint, p_span smallint, p_created_at timestamptz,
   p_has_result boolean, p_auto boolean
 ) returns text language sql stable set search_path = public as $$
   select case
     when p_auto then 'Hệ thống tự đánh giá'
     when p_has_result then 'Đã hoàn thành'
-    when now() < public.result_clock_start(p_study_date, p_created_at) then 'Chưa tới buổi'
-    when now() < public.result_clock_start(p_study_date, p_created_at)
+    when now() < public.result_available_at(p_study_date, p_period, p_created_at) then 'Chưa tới buổi'
+    when now() < public.result_clock_start(p_study_date, p_period, p_span, p_created_at) then 'Đang thực hiện'
+    when now() < public.result_clock_start(p_study_date, p_period, p_span, p_created_at)
          + make_interval(hours => coalesce((select value_int from public.app_settings where key='overdue_hours'), 48))
       then 'Đang chờ cập nhật'
     else 'Trễ hạn cập nhật'
   end;
 $$;
 
-grant execute on function public.result_clock_start(date, timestamptz),
-                          public.progress_status(date, timestamptz, boolean, boolean) to authenticated;
+grant execute on function public.study_period_start(date, smallint),
+                          public.study_period_end(date, smallint, smallint),
+                          public.result_available_at(date, smallint, timestamptz),
+                          public.result_clock_start(date, smallint, smallint, timestamptz),
+                          public.progress_status(date, smallint, smallint, timestamptz, boolean, boolean) to authenticated;
 
 -- View gộp sẵn để giao diện và analytics dùng chung MỘT định nghĩa trạng thái.
 -- cascade vì session_status dựng trên plan_status; nó được tạo lại ngay bên dưới.
@@ -957,20 +982,21 @@ select
   p.created_at,
   p.review_status,
   p.review_note,
-  public.result_clock_start(p.study_date, p.created_at) as clock_start,
-  public.result_clock_start(p.study_date, p.created_at)
+  public.result_clock_start(p.study_date, p.period, p.span, p.created_at) as clock_start,
+  public.result_clock_start(p.study_date, p.period, p.span, p.created_at)
     + make_interval(hours => coalesce((select value_int from public.app_settings where key='overdue_hours'), 48)) as overdue_at,
-  public.result_clock_start(p.study_date, p.created_at)
+  public.result_clock_start(p.study_date, p.period, p.span, p.created_at)
     + make_interval(hours => coalesce((select value_int from public.app_settings where key='auto_rating_hours'), 120)) as auto_evaluate_at,
   (r.plan_id is not null) as has_result,
   coalesce(r.auto_evaluated, false) as auto_evaluated,
-  public.progress_status(p.study_date, p.created_at, r.plan_id is not null, coalesce(r.auto_evaluated, false)) as progress,
+  public.progress_status(p.study_date, p.period, p.span, p.created_at, r.plan_id is not null, coalesce(r.auto_evaluated, false)) as progress,
   r.rating,
   r.needs_recheck,
   -- Đăng ký trước bao lâu (giờ) — dùng cho thống kê thói quen lập kế hoạch.
   round(extract(epoch from (
     (p.study_date::text || ' 00:00:00')::timestamp at time zone 'Asia/Ho_Chi_Minh' - p.created_at
-  )) / 3600.0, 1) as lead_time_hours
+  )) / 3600.0, 1) as lead_time_hours,
+  public.result_available_at(p.study_date, p.period, p.created_at) as available_at
 from public.plans p
 left join public.reflections r on r.plan_id = p.id;
 
@@ -1698,7 +1724,8 @@ with check (
   student_id = auth.uid()
   and exists (
     select 1 from public.plans p
-    where p.id = plan_id and p.student_id = auth.uid() and p.study_date <= public.vn_today()
+    where p.id = plan_id and p.student_id = auth.uid()
+      and now() >= public.study_period_start(p.study_date, p.period)
   )
 );
 
@@ -1707,7 +1734,9 @@ for update to authenticated
 using (student_id = auth.uid() and exists (select 1 from public.plans p where p.id = plan_id and p.student_id = auth.uid()))
 with check (
   student_id = auth.uid()
-  and exists (select 1 from public.plans p where p.id = plan_id and p.student_id = auth.uid() and p.study_date <= public.vn_today())
+  and exists (select 1 from public.plans p where p.id = plan_id
+              and p.student_id = auth.uid()
+              and now() >= public.study_period_start(p.study_date, p.period))
 );
 
 -- Đọc phản tư đầy đủ: giáo viên luôn; trợ giảng chỉ khi được bật view_reflections.
