@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, BookOpen, CalendarPlus, ChevronDown, ShieldAlert, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, CalendarPlus, ChevronDown, FileCheck2, ShieldAlert, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { todayISO } from '../utils/date'
@@ -11,15 +11,17 @@ const daysTo = (iso) =>
 // Đã đóng trong phiên này thì thôi, nhưng LẦN SAU VÀO LẠI VẪN HIỆN. Việc chưa
 // xong thì không được phép tắt vĩnh viễn — chỉ khi em nộp bài / đăng ký xong
 // thì popup mới thực sự biến mất.
-const DISMISS_KEY = 'selfstudy.alertsDismissed'
-const dismissedThisSession = () => sessionStorage.getItem(DISMISS_KEY) === todayISO()
-const markDismissed = () => sessionStorage.setItem(DISMISS_KEY, todayISO())
+const dismissKey = (profileId) => `selfstudy.alertsDismissed.${profileId || 'guest'}`
+const dismissedThisSession = (profileId) => sessionStorage.getItem(dismissKey(profileId)) === todayISO()
+const markDismissed = (profileId) => sessionStorage.setItem(dismissKey(profileId), todayISO())
 
-export default function StudentAlerts({ onRegister, onOpenBook, reloadKey }) {
+export default function StudentAlerts({ onRegister, onOpenBook, onOpenReflections, reflectionReminder, reloadKey }) {
   const { profile, context } = useAuth()
   const [book, setBook] = useState(null)
   const [att, setAtt] = useState(null)
-  const [closed, setClosed] = useState(dismissedThisSession())
+  const [closed, setClosed] = useState(false)
+
+  useEffect(() => { setClosed(dismissedThisSession(profile?.id)) }, [profile?.id])
 
   useEffect(() => {
     if (profile?.role !== 'student') return
@@ -54,7 +56,23 @@ export default function StudentAlerts({ onRegister, onOpenBook, reloadKey }) {
     })
   }
 
-  // 2) Sắp tới hạn nộp bài chia sẻ sách — báo từ TRƯỚC HẠN MỘT TUẦN.
+  // 2) Buổi đã kết thúc mà em chưa nhìn lại kết quả. Bấm một lần là tới đúng
+  // danh sách cần làm, không bắt em tự tìm giữa toàn bộ kế hoạch.
+  if (reflectionReminder?.total > 0) {
+    const late = reflectionReminder.overdue > 0
+    items.push({
+      key: 'cap-nhat-ket-qua',
+      tone: late ? 'danger' : 'warn',
+      icon: FileCheck2,
+      title: late
+        ? `Em có ${reflectionReminder.overdue} nhiệm vụ đã quá hạn cập nhật`
+        : `Em có ${reflectionReminder.total} nhiệm vụ cần cập nhật kết quả`,
+      body: 'Em chỉ cần ghi ngắn gọn mình đã làm được gì. Nếu có sản phẩm, hãy thêm ảnh, file hoặc liên kết làm minh chứng.',
+      action: { label: 'Cập nhật ngay', onClick: onOpenReflections },
+    })
+  }
+
+  // 3) Sắp tới hạn nộp bài chia sẻ sách — báo từ TRƯỚC HẠN MỘT TUẦN.
   if (book && !book.link_url && book.due_date && daysTo(book.due_date) <= 7) {
     const d = daysTo(book.due_date)
     items.push({
@@ -71,8 +89,9 @@ export default function StudentAlerts({ onRegister, onOpenBook, reloadKey }) {
     })
   }
 
-  // 3) Nhắc về quyền miễn trừ / mức kỷ luật đang ở.
-  if (att?.bat && att.da_quen > 0) {
+  // 4) Mức kỷ luật đã có thẻ thường trực phía dưới, nên chỉ đưa vào popup khi
+  // vẫn còn chỗ. Popup tối đa ba việc để học sinh không bị quá tải.
+  if (items.length < 3 && att?.bat && att.da_quen > 0) {
     const muc = att.muc ?? {}
     items.push({
       key: 'ky-luat',
@@ -88,14 +107,14 @@ export default function StudentAlerts({ onRegister, onOpenBook, reloadKey }) {
 
   if (!items.length) return null
 
-  const close = () => { markDismissed(); setClosed(true) }
+  const close = () => { markDismissed(profile?.id); setClosed(true) }
 
   return <div className="modal-backdrop" onMouseDown={close}>
-    <div className="modal alert-modal" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="modal alert-modal" role="dialog" aria-modal="true" aria-labelledby="student-alert-title" onMouseDown={(e) => e.stopPropagation()}>
       <div className="modal-head">
         <div>
           <span className="eyebrow">NHẮC NHỞ</span>
-          <h2>{items.length > 1 ? `Em có ${items.length} việc cần làm` : 'Em có một việc cần làm'}</h2>
+          <h2 id="student-alert-title">{items.length > 1 ? `Em có ${items.length} việc cần làm` : 'Em có một việc cần làm'}</h2>
         </div>
         <button className="icon-button" onClick={close} aria-label="Đóng"><X size={18} /></button>
       </div>
@@ -116,7 +135,7 @@ export default function StudentAlerts({ onRegister, onOpenBook, reloadKey }) {
       })}
 
       <button className="button ghost full" onClick={close}>Để sau</button>
-      <p className="muted-text small center">Nhắc này sẽ hiện lại mỗi lần em vào trang, cho tới khi việc được làm xong.</p>
+      <p className="muted-text small center">Nếu việc chưa xong, hệ thống sẽ nhắc lại vào lần đăng nhập sau.</p>
     </div>
   </div>
 }

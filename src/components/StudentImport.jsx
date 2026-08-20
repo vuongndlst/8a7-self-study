@@ -169,7 +169,7 @@ export default function StudentImport({ classId, className, yearName, onClose, o
           </span>
         </div>
         {willWrite === 0 && <p className="muted-text small">
-          Không có dòng nào để ghi. Vui lòng xử lý các dòng lỗi trước khi tiếp tục.
+          Chưa có dòng nào có thể ghi. Thầy cô sửa các dòng báo lỗi rồi thử lại nhé.
         </p>}
         {blocked > 0 && willWrite > 0 && <p className="muted-text small">
           {blocked} dòng cần xử lý sẽ được bỏ qua; các dòng còn lại vẫn import bình thường.

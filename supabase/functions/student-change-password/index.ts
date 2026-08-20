@@ -1,7 +1,7 @@
 // Đổi mật khẩu học sinh — kiểm luật ở PHÍA SERVER.
 // Frontend cũng kiểm, nhưng đây mới là chỗ không thể bỏ qua bằng DevTools.
 // Hàm này cũng là nơi duy nhất hạ được cờ must_change_password.
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import {
   corsHeaders, json, studentEmail, validStudentPassword, PASSWORD_RULE_MESSAGE,
 } from '../_shared/common.ts'

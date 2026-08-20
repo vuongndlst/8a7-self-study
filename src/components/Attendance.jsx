@@ -205,7 +205,7 @@ export function AttendancePolicyPanel({ classId, className }) {
   return <section className="card sched-card">
     <div className="section-title"><div>
       <h2><CalendarCog size={19} /> Kỷ luật quên đăng ký — lớp {className}</h2>
-      <p>Mỗi lớp tự khai mốc của mình. Lớp chưa bật thì học sinh không thấy popup nhắc,
+      <p>Mỗi lớp tự chọn thời điểm bắt đầu áp dụng. Khi chưa bật, học sinh không thấy hộp nhắc việc
          và hệ thống không ghi nhận lần quên nào.</p>
     </div></div>
 
@@ -215,8 +215,8 @@ export function AttendancePolicyPanel({ classId, className }) {
       </label>
       <div><strong>Áp dụng kỷ luật quên đăng ký</strong>
         <small>{f.enabled
-          ? 'Đang BẬT — hệ thống ghi nhận vào 23:00 mỗi ngày học và học sinh thấy mức của mình.'
-          : 'Đang TẮT — không ghi nhận, không nhắc, không kỷ luật.'}</small></div>
+          ? 'Đang áp dụng — hệ thống chốt danh sách lúc 00:05 của ngày hôm sau, sau khi hạn 24:00 đã qua.'
+          : 'Chưa áp dụng — hệ thống không ghi nhận, nhắc nhở hay tính kỷ luật.'}</small></div>
     </div>
 
     <div className="form-grid two">

@@ -466,7 +466,7 @@ Hai việc khác nhau nên nằm ở **hai tab riêng**:
 
 ### Tab *Lịch tự học* — hạn đăng ký
 
-Hạn khóa cố định là **24:00 đêm hôm trước**, đúng bằng cách `registrationStatus()` chấm
+Hạn khóa cố định là **24:00 của ngày hôm trước** (0:00 của ngày tự học), đúng bằng cách `registrationStatus()` chấm
 "Đúng hạn / Trễ" từ trước tới nay. Ô tick `classes.allow_late_registration` quyết định
 điều gì xảy ra sau mốc đó:
 
@@ -743,8 +743,10 @@ Không gửi email (lý do ở mục 2), nên các nhắc nhở nằm ngay trên
 - **Giáo viên** — thẻ *“Cần chú ý”* trên dashboard: bao nhiêu em chưa lập kế hoạch cho
   ngày mai (kèm tên), bao nhiêu em còn tiết chưa cập nhật kết quả, bao nhiêu em đang chờ
   tự đặt lại mật khẩu.
-- **Học sinh** — banner cảnh báo số tiết đã qua mà chưa cập nhật kết quả, và báo khi
-  giáo viên có nhận xét mới.
+- **Học sinh** — ngay sau khi buổi tự học kết thúc, popup gom tối đa ba việc quan trọng
+  và có nút đi thẳng tới các nhiệm vụ cần cập nhật. Popup chỉ nhắc một lần trong phiên,
+  tách theo từng học sinh trên thiết bị dùng chung. Phần nhìn lại ngắn là bắt buộc;
+  minh chứng bằng chữ, ảnh, file hoặc liên kết được khuyến khích nhưng không bắt buộc.
 
 ## 11. Deploy Edge Functions
 
@@ -1148,10 +1150,11 @@ Ba quy tắc về khoảng đếm:
 
 Lịch tự học của lớp có thể đổi giữa năm. Đếm lại theo lịch hiện tại sẽ làm những lần quên trong
 quá khứ **biến mất hoặc tự mọc thêm** — mà đây là dữ liệu dùng để kỷ luật học sinh, không được
-phép đổi sau lưng. Nên có bảng `attendance_misses`, ghi bởi cron lúc **23:00 giờ Việt Nam**.
+phép đổi sau lưng. Nên có bảng `attendance_misses`, được cron chốt lúc **00:05 giờ Việt Nam
+của ngày hôm sau** — sau khi hạn 24:00 đã qua.
 
-Chạy lúc 23:00 chứ không sớm hơn: lớp có thể đang bật *"cho phép đăng ký trễ"*, em đăng ký trong
-ngày vẫn phải được tính là có đăng ký.
+Hàm mặc định xử lý **ngày vừa kết thúc** (`vn_today() - 1`). Vì lớp có thể đang bật
+*"cho phép đăng ký trễ"*, học sinh đăng ký trong giờ cuối cùng của ngày vẫn phải được tính là có đăng ký.
 
 ### Thang kỷ luật
 

@@ -16,14 +16,13 @@ export default function GuidePage() {
     <section className="card deadline-card">
       <div className="deadline-head"><Lock size={22}/><div>
         <span className="eyebrow">HẠN ĐĂNG KÝ</span>
-        <h2>Đăng ký xong trước 24:00 đêm hôm trước</h2>
+        <h2>Đăng ký trước khi hết ngày hôm trước</h2>
       </div></div>
-      <p>Muốn tự học ngày mai thì đăng ký <strong>chậm nhất là tối nay</strong>. Quá nửa đêm là đã sang ngày mới,
-         và buổi đó bị tính là <em>Trễ</em>.</p>
+      <p>Muốn tự học ngày mai, em đăng ký <strong>chậm nhất trong tối nay</strong>. Mốc chốt là
+         <strong> 24:00 của ngày hôm trước</strong> (0:00 của ngày tự học). Đăng ký sau đó sẽ được tính là <em>Trễ</em>.</p>
       <div className="guide-tip"><AlertTriangle size={16}/><span>
-        Giáo viên có thể <strong>khóa hẳn</strong> việc đăng ký trễ. Khi lớp đã khóa, quá 24:00 là em
-        <strong> không đăng ký được nữa</strong> cho ngày hôm đó — ô chọn ngày sẽ bắt đầu từ ngày mai.
-        Đây không phải lỗi, mà là quy định của lớp.
+        Giáo viên có thể <strong>khóa đăng ký trễ</strong>. Khi đó, sau 24:00 em không thể đăng ký
+        cho ngày vừa bắt đầu; ô chọn ngày sẽ bắt đầu từ ngày mai. Đây là quy định của lớp.
       </span></div>
     </section>
 
@@ -38,7 +37,7 @@ export default function GuidePage() {
       <div className="timeline-rule">
         <div><span className="step-dot ok">1</span><div>
           <strong>Ngay sau giờ tự học</strong>
-          <small>Mở thẻ của tiết đó, chọn kết quả và ghi vài dòng. Chỉ mất khoảng một phút.</small>
+          <small>Hệ thống sẽ nhắc và đưa em tới đúng nhiệm vụ. Chọn kết quả rồi ghi vài dòng; thường chỉ mất khoảng một phút.</small>
         </div></div>
         <div><span className="step-dot warn">2</span><div>
           <strong>Sau 2 ngày mà chưa cập nhật</strong>
@@ -106,7 +105,8 @@ export default function GuidePage() {
            <strong> “Cần cập nhật kết quả”</strong>, thẻ có viền cam và dòng nhiệm vụ có vạch cam bên trái —
            em không thể bỏ sót. Mỗi nhiệm vụ như vậy có một nút lớn
            <strong> “Cập nhật kết quả”</strong> ngay bên dưới. Bấm vào đó, chọn Hoàn thành / Một phần / Chưa hoàn thành,
-           ghi vài dòng, và bật <em>“Em cần giáo viên hỗ trợ”</em> nếu còn vướng.</p>
+	           ghi vài dòng em đã làm được gì, và bật <em>“Em cần giáo viên hỗ trợ”</em> nếu còn vướng.
+	           Minh chứng được khuyến khích nhưng không bắt buộc.</p>
         <div className="guide-tip"><ListPlus size={16}/><span>
           Ở mục <strong>“Nhiệm vụ của em”</strong> bên dưới, em lọc nhanh bằng các nút
           <em> Tất cả · Sắp tới · Chưa có kết quả · Đã xong · Cần viết phản hồi</em>, tìm theo môn hoặc nội dung,
@@ -141,7 +141,7 @@ export default function GuidePage() {
       <div className="three-rule-grid">
         <div><span>TRƯỚC</span><strong>Lên kế hoạch</strong><p>Chọn ngày và tiết, ghi một hoặc nhiều nhiệm vụ, đăng ký thiết bị nếu cần và gửi sớm để được duyệt.</p></div>
         <div><span>TRONG</span><strong>Học theo kế hoạch</strong><p>Ổn định đúng giờ và tập trung vào mục tiêu đã đặt.</p></div>
-        <div><span>SAU</span><strong>Nhìn lại</strong><p>Bấm nút <em>Cập nhật kết quả</em> trong vòng 2 ngày, nộp minh chứng (chữ, ảnh, file hoặc link) và ghi điều em cần hỗ trợ.</p></div>
+        <div><span>SAU</span><strong>Nhìn lại</strong><p>Bấm <em>Cập nhật kết quả</em>, ghi ngắn gọn em đã làm được gì và điều còn vướng. Nếu có sản phẩm, em thêm chữ, ảnh, file hoặc link làm minh chứng.</p></div>
       </div>
     </section>
 

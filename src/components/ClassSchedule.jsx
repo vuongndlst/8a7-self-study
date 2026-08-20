@@ -43,8 +43,8 @@ export function ClassScheduleSettings({ classId, className }) {
     if (error) return setMsg('Không lưu được cài đặt: ' + error.message)
     setAllowLate(next)
     setMsg(next
-      ? '✓ Đã cho phép đăng ký trễ. Học sinh vẫn đăng ký được trong chính ngày tự học.'
-      : '✓ Đã khóa đăng ký trễ. Từ giờ học sinh phải đăng ký xong trước 24:00 đêm hôm trước.')
+      ? '✓ Đã cho phép đăng ký trễ. Học sinh vẫn có thể đăng ký trong ngày tự học.'
+      : '✓ Đã khóa đăng ký trễ. Học sinh cần đăng ký trước khi hết ngày hôm trước.')
   }
 
   const toggle = async (w, p) => {
@@ -73,7 +73,8 @@ export function ClassScheduleSettings({ classId, className }) {
   <section className="card sched-card">
     <div className="section-title"><div>
       <h2><Clock size={19} /> Hạn đăng ký của lớp {className}</h2>
-      <p>Hạn khóa luôn là <strong>24:00 đêm hôm trước</strong>. Ô dưới đây quyết định điều gì xảy ra sau mốc đó.</p>
+      <p>Mốc chốt là <strong>24:00 của ngày hôm trước</strong> (0:00 của ngày tự học).
+         Cài đặt dưới đây quyết định học sinh còn được đăng ký sau mốc đó hay không.</p>
     </div></div>
 
     <div className="toggle-row">
@@ -84,16 +85,16 @@ export function ClassScheduleSettings({ classId, className }) {
       <div>
         <strong>Cho phép đăng ký trễ</strong>
         <small>{allowLate
-          ? 'Đang BẬT — học sinh vẫn đăng ký được trong chính ngày tự học, nhưng buổi đó bị đánh dấu “Trễ” trong thống kê.'
-          : 'Đang TẮT — quá 24:00 đêm hôm trước là khóa hẳn. Học sinh chỉ đăng ký được cho ngày mai trở đi.'}</small>
+          ? 'Đang bật — học sinh vẫn đăng ký được trong ngày tự học, nhưng kế hoạch sẽ được đánh dấu “Trễ”.'
+          : 'Đang tắt — sau 24:00 của ngày hôm trước, học sinh chỉ đăng ký được cho ngày mai trở đi.'}</small>
       </div>
     </div>
 
     <div className={`notice compact ${allowLate ? '' : 'warning'}`}>
       {allowLate ? <Clock size={16} /> : <Lock size={16} />}<span>
         {allowLate
-          ? 'Nên giữ BẬT trong vài tuần đầu để các em quen nếp, rồi hãy tắt.'
-          : 'Đã khóa ở phía cơ sở dữ liệu, không chỉ ở giao diện — học sinh không thể lách bằng cách nào khác.'}
+          ? 'Thầy cô có thể giữ cài đặt này trong vài tuần đầu để các em quen nếp, rồi tắt khi cần.'
+          : 'Cài đặt đã được áp dụng cho cả giao diện và dữ liệu đăng ký.'}
       </span></div>
 
     {msg && <div className={msg.startsWith('✓') ? 'notice compact' : 'form-error'}>{msg}</div>}

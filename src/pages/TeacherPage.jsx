@@ -311,7 +311,7 @@ export default function TeacherPage(){
   return <div className="page teacher-page">
     <section className="dashboard-heading">
       <div>
-        <span className="eyebrow">TEACHER DASHBOARD</span>
+        <span className="eyebrow">TRANG GIÁO VIÊN</span>
         <h1>Quản lý giờ tự học {context.className||''}</h1>
         <p>Theo dõi kế hoạch, kết quả và nhu cầu hỗ trợ của {rosterTotal} học sinh{context.yearName?` · năm học ${context.yearName}`:''}.</p>
       </div>
@@ -353,9 +353,9 @@ export default function TeacherPage(){
       <Stat label="Bổ sung muộn" value={inbox.recheck} alert={inbox.recheck>0}
             onClick={()=>{setView('plans');setFilters({...CLEAR,recheck:'co'})}}
             active={filters.recheck==='co'}/>
-      <Stat label="Chưa lập KH ngày mai" value={noPlanTomorrow.length} alert={noPlanTomorrow.length>0}
+      <Stat label="Chưa có kế hoạch ngày mai" value={noPlanTomorrow.length} alert={noPlanTomorrow.length>0}
             onClick={()=>setView('missing')} active={view==='missing'}/>
-      {disc.length>0&&<Stat label={discParent>0?'Kỷ luật · có em cần mời PH':'Đang chịu kỷ luật'}
+      {disc.length>0&&<Stat label={discParent>0?'Có em cần trao đổi với phụ huynh':'Đang áp dụng kỷ luật'}
             value={discCount} alert={discCount>0}
             onClick={()=>setView('discipline')} active={view==='discipline'}/>}
     </section>
@@ -365,7 +365,7 @@ export default function TeacherPage(){
       <button type="button" className={view==='students'?'active':''} onClick={()=>setView('students')}>Theo học sinh</button>
       <button type="button" className={view==='analytics'?'active':''} onClick={()=>setView('analytics')}>Phân tích</button>
       <button type="button" className={view==='roster'?'active':''} onClick={()=>setView('roster')}>Học sinh</button>
-      <button type="button" className={view==='missing'?'active':''} onClick={()=>setView('missing')}>HS chưa đăng ký</button>
+      <button type="button" className={view==='missing'?'active':''} onClick={()=>setView('missing')}>Chưa đăng ký</button>
       <button type="button" className={view==='schedule'?'active':''} onClick={()=>setView('schedule')}>Lịch tự học</button>
       <button type="button" className={view==='discipline'?'active':''} onClick={()=>setView('discipline')}>Kỷ luật</button>
       <button type="button" className={view==='assistants'?'active':''} onClick={()=>setView('assistants')}>Trợ giảng</button>
@@ -759,8 +759,8 @@ function BulkRateModal({plans,students,reflections,onClose,onDone}){
         </label>
         <div><strong>Chấm đè lên {daCham.length} tiết thầy cô đã chấm</strong>
           <small>{overwrite
-            ? 'Đang BẬT — điểm cũ của những tiết đó sẽ bị thay bằng số sao ở trên.'
-            : 'Đang TẮT — những tiết đã có sao sẽ được giữ nguyên.'}</small></div>
+            ? 'Đang chọn — điểm cũ của những tiết đó sẽ được thay bằng số sao ở trên.'
+            : 'Chưa chọn — những tiết đã có sao sẽ được giữ nguyên.'}</small></div>
       </div>}
 
       <div className="detail-box">

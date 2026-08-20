@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CalendarDays, Check, ClipboardList, Laptop, Layers, Lock, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { todayISO } from '../utils/date'
+import { isLateRegistration, todayISO } from '../utils/date'
 import { isoWeekday } from './ClassSchedule'
 
 const SUBJECTS = ['Toán', 'Ngữ văn', 'Tiếng Anh', 'Khoa học tự nhiên', 'Lịch sử & Địa lý',
@@ -53,7 +53,8 @@ export default function SessionRegister({ onDone, onCancel }) {
       .then(({ data }) => setAllowLate(data?.allow_late_registration ?? true))
   }, [context.classId])
 
-  // Lớp đã khóa đăng ký trễ thì hôm nay không chọn được nữa — hạn là 24:00 đêm qua.
+  // Lớp đã khóa đăng ký trễ thì hôm nay không chọn được nữa: mốc chốt là
+  // 24:00 của ngày hôm trước, tức 0:00 của ngày tự học.
   const minDate = allowLate ? todayISO() : tomorrowISO()
   useEffect(() => { if (date && date < minDate) setDate('') }, [minDate])
 
@@ -83,9 +84,9 @@ export default function SessionRegister({ onDone, onCancel }) {
   const canSpan = period != null && period < 9 && allowedPeriods.includes(period + 1)
   useEffect(() => { if (!canSpan) setTasks((prev) => prev.map((t) => (t.span === 2 ? { ...t, span: 1 } : t))) }, [canSpan])
 
-  // Hạn là 24:00 đêm hôm trước, nên "trễ" đúng bằng "đăng ký cho chính hôm nay".
-  // Giống hệt cách registrationStatus() chấm, để nhắc trước khớp với nhãn sau này.
-  const isLate = date === todayISO()
+  // Dùng chung phép tính với registrationStatus() để cảnh báo trước khi gửi
+  // luôn khớp với nhãn trong thống kê.
+  const isLate = isLateRegistration(date)
 
   const setTask = (key, patch) => setTasks((prev) => prev.map((t) => (t.key === key ? { ...t, ...patch } : t)))
   const addTask = () => setTasks((prev) => [...prev, emptyTask()])
@@ -167,12 +168,12 @@ export default function SessionRegister({ onDone, onCancel }) {
         <input type="date" value={date} min={minDate} onChange={(e) => setDate(e.target.value)} />
         {date && <p className="muted-text small">{fmtDate(date)}</p>}
         {!allowLate && <div className="notice compact"><Lock size={16} /><span>
-          Lớp mình <strong>khóa đăng ký lúc 24:00 đêm hôm trước</strong>, nên em chỉ chọn được từ
-          <strong> ngày mai</strong> trở đi. Hôm nay đã hết hạn rồi.
+          Lớp mình chốt đăng ký vào <strong>24:00 của ngày hôm trước</strong>. Hôm nay đã hết hạn,
+          nên em chỉ có thể chọn từ <strong>ngày mai</strong> trở đi.
         </span></div>}
         {allowLate && isLate && <div className="notice warning compact"><AlertTriangle size={16} /><span>
-          Em đang đăng ký sau hạn 24:00 đêm qua. Buổi này vẫn được nhận nhưng sẽ bị đánh dấu
-          <strong> Trễ</strong>. Lần sau em đăng ký trước nhé.
+          Em đang đăng ký sau <strong>24:00 của ngày hôm trước</strong>. Hệ thống vẫn nhận kế hoạch
+          này nhưng sẽ đánh dấu <strong>Trễ</strong>. Lần sau em nhớ đăng ký sớm hơn nhé.
         </span></div>}
       </div>
     </div>

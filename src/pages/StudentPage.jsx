@@ -6,6 +6,7 @@ import { supabase, callFunction } from '../lib/supabase'
 import { shrinkImage } from '../lib/image'
 import { selectIn } from '../lib/query'
 import { formatDate, registrationStatus, todayISO } from '../utils/date'
+import { isReflectionDue, reflectionReminder } from '../utils/studentReminders'
 import { passwordChecks, validateStudentPassword } from '../utils/password'
 import StatusBadge from '../components/StatusBadge'
 import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
@@ -91,14 +92,12 @@ export default function StudentPage(){
       .sort((a,b)=>b.study_date.localeCompare(a.study_date)||a.period-b.period)
   },[plans])
   const upcoming=useMemo(()=>sessions.filter(s=>s.study_date>=todayISO()),[sessions])
-  const past=useMemo(()=>sessions.filter(s=>s.study_date<todayISO()),[sessions])
-  // Buổi đã qua mà còn nhiệm vụ chưa có kết quả — đây là việc em cần làm NGAY,
-  // nên tách hẳn ra một mục riêng ở trên thay vì để lẫn trong danh sách dài.
-  const todo=useMemo(()=>past.filter(s=>s.tasks.some(t=>!reflections[t.id])),[past,reflections])
+  // CSDL đã tính giờ kết thúc từng buổi. Dùng đúng trạng thái đó để nhắc ngay sau
+  // buổi học, thay vì chờ sang ngày hôm sau hoặc tự đoán thời gian ở giao diện.
+  const reminder=useMemo(()=>reflectionReminder(plans,reflections,status),[plans,reflections,status])
+  const todo=useMemo(()=>sessions.filter(s=>s.tasks.some(t=>reminder.planIds.has(t.id))),[sessions,reminder])
   const todoKeys=useMemo(()=>new Set(todo.map(s=>s.key)),[todo])
-  // Nhiệm vụ (không phải buổi) đã qua mà chưa cập nhật kết quả.
-  const pendingReflections=past.reduce((n,s)=>n+s.tasks.filter(t=>!reflections[t.id]).length,0)
-  const newComments=Object.values(reflections).filter(r=>r.teacher_comment).length
+  const completedSessions=useMemo(()=>sessions.filter(s=>s.tasks.length>0&&s.tasks.every(t=>reflections[t.id])),[sessions,reflections])
   // Tiết bị chấm 1–2 sao mà em chưa viết phản hồi điều chỉnh.
   const needsAck=plans.filter(p=>{const r=reflections[p.id];return r?.rating!=null&&r.rating<=2&&!r.student_ack_at})
   const overdue=plans.filter(p=>status[p.id]?.progress==='Trễ hạn cập nhật')
@@ -118,8 +117,8 @@ export default function StudentPage(){
      hint:'Bị chấm 1–2 sao. Đọc nhận xét rồi ghi một dòng cho biết em sẽ điều chỉnh thế nào.'},
     {f:'tre_han',     n:overdue.length,    tone:'danger', label:'tiết đã quá hạn cập nhật',
      hint:'Quá 5 ngày là hệ thống tự ghi nhận 1 sao. Em bổ sung sớm nhé.'},
-    {f:'chua_ket_qua',n:pendingReflections-overdue.length, tone:'warn', label:'tiết chưa ghi kết quả',
-     hint:'Buổi đã qua rồi mà em chưa cập nhật em làm được tới đâu.'},
+    {f:'chua_ket_qua',n:reminder.pending, tone:'warn', label:'tiết cần cập nhật kết quả',
+     hint:'Ghi ngắn gọn em đã làm được gì; có sản phẩm thì thêm minh chứng.'},
     {f:'tu_dong',     n:autoRated.length,  tone:'warn',   label:'tiết hệ thống tự chấm',
      hint:'Em vẫn bổ sung được kết quả — thầy cô sẽ xem lại và chấm lại.'},
   ].filter(c=>c.n>0)
@@ -130,7 +129,7 @@ export default function StudentPage(){
     const list=sessions.filter(s=>{
       if(filter==='sap_toi'&&s.study_date<todayISO())return false
       if(filter==='chua_ket_qua'&&!todoKeys.has(s.key))return false
-      if(filter==='da_xong'&&!(s.study_date<todayISO()&&s.tasks.every(t=>reflections[t.id])))return false
+      if(filter==='da_xong'&&!s.tasks.every(t=>reflections[t.id]))return false
       if(filter==='can_phan_hoi'&&!s.tasks.some(t=>{const r=reflections[t.id];return r?.rating!=null&&r.rating<=2&&!r.student_ack_at}))return false
       if(filter==='tre_han'&&!s.tasks.some(t=>status[t.id]?.progress==='Trễ hạn cập nhật'))return false
       if(filter==='tu_dong'&&!s.tasks.some(t=>status[t.id]?.progress==='Hệ thống tự đánh giá'))return false
@@ -196,9 +195,10 @@ export default function StudentPage(){
 
     {/* Popup nhắc việc: chưa đăng ký hôm nay, sắp tới hạn nộp bài chia sẻ sách,
         và mức kỷ luật đang ở. Hiện lại MỖI LẦN vào trang cho tới khi việc xong. */}
-    <StudentAlerts reloadKey={alertKey}
+    <StudentAlerts reloadKey={alertKey} reflectionReminder={reminder}
       onRegister={()=>{setShowForm(true);requestAnimationFrame(()=>window.scrollTo({top:0,behavior:'smooth'}))}}
-      onOpenBook={()=>setOpenBook(k=>k+1)}/>
+      onOpenBook={()=>setOpenBook(k=>k+1)}
+      onOpenReflections={()=>jumpTo(reminder.overdue>0?'tre_han':'chua_ket_qua')}/>
 
     {/* Lượt chia sẻ sách LUÔN hiện cho tới khi em chia sẻ xong — đây là việc có
         hạn chót riêng, không được để lẫn vào danh sách tiết tự học. */}
@@ -206,7 +206,6 @@ export default function StudentPage(){
 
     <MyAttendance reloadKey={alertKey}/>
 
-    {newComments>0&&<div className="notice"><MessageSquareQuote size={18}/><span>Giáo viên đã nhận xét <strong>{newComments}</strong> lần phản tư của em.</span></div>}
     {message&&<div className="notice"><ShieldCheck size={18}/><span>{message}</span></div>}
     {showForm&&<SessionRegister
       onCancel={()=>setShowForm(false)}
@@ -225,7 +224,7 @@ export default function StudentPage(){
         <FilterChip value="tre_han"      now={filter} set={setFilter} label="Trễ hạn"         n={overdue.length} alert/>
         <FilterChip value="can_phan_hoi" now={filter} set={setFilter} label="Cần viết phản hồi" n={needsAck.length} alert/>
         <FilterChip value="tu_dong"      now={filter} set={setFilter} label="Hệ thống tự chấm" n={autoRated.length} alert/>
-        <FilterChip value="da_xong"      now={filter} set={setFilter} label="Đã xong"         n={past.length-todo.length}/>
+        <FilterChip value="da_xong"      now={filter} set={setFilter} label="Đã xong"         n={completedSessions.length}/>
       </div>
 
       <div className="card filters">
@@ -257,7 +256,7 @@ export default function StudentPage(){
 
     {openPlan&&(openPlan.study_date>todayISO()
       ?<EditPlanModal plan={openPlan} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>
-      :<ReflectionModal plan={openPlan} existing={reflections[openPlan.id]} evidence={evidence[openPlan.id]||[]} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>)}
+      :<ReflectionModal plan={openPlan} progress={status[openPlan.id]?.progress} existing={reflections[openPlan.id]} evidence={evidence[openPlan.id]||[]} onClose={()=>setOpenPlan(null)} onSaved={()=>{setOpenPlan(null);load()}}/>)}
     {showPassword&&<ChangePasswordModal mshs={profile?.mshs} onClose={()=>setShowPassword(false)}/>}
     {showAvatar&&<AvatarUploader onClose={()=>setShowAvatar(false)}/>}
     {showChat&&<div className="modal-backdrop" onMouseDown={()=>setShowChat(false)}>
@@ -283,7 +282,7 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
   const regStatus=registrationStatus(study_date,tasks[0]?.created_at)
   // Trạng thái buổi suy ra từ các nhiệm vụ — giống hệt cách CSDL tính.
   const done=tasks.filter(t=>reflections[t.id]).length
-  const pending=tasks.length-done
+  const due=tasks.filter(t=>!reflections[t.id]&&isReflectionDue(status[t.id]?.progress)).length
   const late=tasks.filter(t=>['Trễ hạn cập nhật','Hệ thống tự đánh giá'].includes(status[t.id]?.progress)).length
   const worst=tasks.reduce((m,t)=>{const r=reflections[t.id]?.rating;return r!=null&&(m==null||r<m)?r:m},null)
   const tone=ratingTone(worst)
@@ -298,8 +297,9 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
     onChanged()
   }
 
-  // Buổi đã qua mà còn nhiệm vụ chưa có kết quả thì cả thẻ được làm nổi bật.
-  const needsResult=!editable&&pending>0
+  // Chỉ nhắc khi CSDL xác nhận đã hết buổi. Nhờ vậy buổi hôm nay được nhắc đúng
+  // lúc, nhưng học sinh không bị thúc cập nhật khi còn đang học.
+  const needsResult=due>0
 
   return <article className={`card session-card ${tone} ${needsResult?'needs-result':''}`}>
     <div className="plan-card-top">
@@ -320,8 +320,7 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
 
     <ul className="session-tasks">{tasks.map(t=>{
       const r=reflections[t.id];const st=status[t.id];const ev=evidence[t.id]||[]
-      // Nhiệm vụ đã qua ngày mà chưa có kết quả: đây là dòng em phải xử lý.
-      const taskTodo=!editable&&!r
+	      const taskTodo=!r&&isReflectionDue(st?.progress)
       return <li key={t.id} className={taskTodo?'task-todo':''}>
         <button type="button" className={`task-row ${ratingTone(r?.rating)} ${taskTodo?'todo':''}`} onClick={()=>onOpen(t)}>
           <span className="task-row-main">
@@ -341,22 +340,22 @@ function SessionCard({session,reflections,evidence,status,onOpen,onChanged}){
         </button>
         {/* Cập nhật kết quả là việc quan trọng nhất sau giờ tự học — cho nó một
             nút riêng, to rõ, thay vì bắt em đoán rằng bấm vào dòng sẽ ra. */}
-        {!editable&&(r
-          ? <button type="button" className="button ghost task-cta" onClick={()=>onOpen(t)}>
-              <MessageSquareQuote size={16}/> Xem lại / bổ sung kết quả
-            </button>
-          : <button type="button" className="button primary task-cta" onClick={()=>onOpen(t)}>
-              <FileUp size={18}/> Cập nhật kết quả
-            </button>)}
+	        {!editable&&r
+	          ? <button type="button" className="button ghost task-cta" onClick={()=>onOpen(t)}>
+	              <MessageSquareQuote size={16}/> Xem lại / bổ sung kết quả
+	            </button>
+	          : taskTodo&&<button type="button" className="button primary task-cta" onClick={()=>onOpen(t)}>
+	              <FileUp size={18}/> Cập nhật kết quả
+	            </button>}
         {editable&&<button type="button" className="button ghost task-cta" onClick={()=>onOpen(t)}>
           Chỉnh sửa nhiệm vụ
         </button>}
       </li>
     })}</ul>
 
-    {!editable&&pending>0&&<p className="session-cta-hint">
-      Còn <strong>{pending}</strong> nhiệm vụ chưa có kết quả. Cập nhật sớm để thầy cô theo dõi đúng tiến độ nhé.
-    </p>}
+	    {needsResult&&<p className="session-cta-hint">
+	      Còn <strong>{due}</strong> nhiệm vụ cần cập nhật. Em chỉ cần ghi ngắn gọn mình đã làm được gì; có sản phẩm thì thêm minh chứng nhé.
+	    </p>}
   </article>
 }
 
@@ -409,7 +408,7 @@ function EditPlanModal({plan,onClose,onSaved}){
   </div></div>
 }
 
-function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
+function ReflectionModal({plan,progress,existing,evidence,onClose,onSaved}){
   const [form,setForm]=useState({completion_status:existing?.completion_status||'Hoàn thành',note:existing?.note||'',need_help:existing?.need_help||false,help_note:existing?.help_note||''})
   const [ack,setAck]=useState(existing?.student_ack_note||'')
   const [ackBusy,setAckBusy]=useState(false)
@@ -417,6 +416,7 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
   const [link,setLink]=useState('');const [file,setFile]=useState(null);const [note,setNote]=useState('')
   const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('')
   const lowRating=existing?.rating!=null&&existing.rating<=2
+  const canReflect=Boolean(existing)||isReflectionDue(progress)||progress==='Hệ thống tự đánh giá'
 
   const saveAck=async()=>{
     setAckMsg('')
@@ -431,6 +431,8 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
 
   const save=async()=>{
     setBusy(true);setMsg('')
+    if(!canReflect){setBusy(false);return setMsg('Em có thể cập nhật kết quả sau khi buổi tự học kết thúc.')}
+    if(form.note.trim().length<10){setBusy(false);return setMsg('Hãy viết ít nhất 10 ký tự để nhìn lại em đã làm được gì.')}
     const additions=(link.trim()?1:0)+(file?1:0)+(note.trim()?1:0)
     if(evidence.length+additions>3){setBusy(false);return setMsg('Tối đa 3 minh chứng cho mỗi tiết.')}
     if(note.trim()&&note.trim().length<10){setBusy(false);return setMsg('Phần mô tả kết quả cần ít nhất 10 ký tự để thầy cô hiểu em đã làm gì.')}
@@ -444,7 +446,7 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
       if(!['image/jpeg','image/png','image/webp','application/pdf'].includes(file.type)){setBusy(false);return setMsg('Chỉ nhận JPG, PNG, WebP hoặc PDF.')}
     }
     // Không gửi các cột của giáo viên; trigger phía CSDL cũng chặn sẵn.
-    const payload={plan_id:plan.id,student_id:plan.student_id,...form,help_note:form.need_help?form.help_note.trim():null,completed_at:new Date().toISOString()}
+    const payload={plan_id:plan.id,student_id:plan.student_id,...form,note:form.note.trim(),help_note:form.need_help?form.help_note.trim():null,completed_at:new Date().toISOString()}
     const {error}=await supabase.from('reflections').upsert(payload,{onConflict:'plan_id'})
     if(error){setBusy(false);return setMsg('Không thể lưu kết quả.')}
     if(link.trim()){
@@ -481,8 +483,8 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
     await supabase.from('evidence').delete().eq('id',item.id)
     onSaved()
   }
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal" onMouseDown={e=>e.stopPropagation()}>
-    <div className="modal-head"><div><span className="eyebrow">{formatDate(plan.study_date)} · TIẾT {plan.period}</span><h2>{plan.subject}</h2></div><button className="icon-button" onClick={onClose}>✕</button></div>
+	  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="reflection-title" onMouseDown={e=>e.stopPropagation()}>
+	    <div className="modal-head"><div><span className="eyebrow">{formatDate(plan.study_date)} · TIẾT {plan.period}</span><h2 id="reflection-title">{plan.subject}</h2></div><button className="icon-button" onClick={onClose} aria-label="Đóng">✕</button></div>
     <div className="detail-box"><strong>Nhiệm vụ</strong><p>{plan.task}</p><strong>Mục tiêu</strong><p>{plan.goal}</p></div>
     {plan.use_device&&<div className="detail-box"><strong>Đăng ký thiết bị điện tử</strong><p><StatusBadge value={plan.device_status}/> {plan.device_review_note?`— ${plan.device_review_note}`:''}</p></div>}
 
@@ -507,12 +509,14 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
       </button>
       {existing.student_ack_at&&<small className="muted-text">Đã gửi lúc {new Date(existing.student_ack_at).toLocaleString('vi-VN')}</small>}
     </div>}
+    {canReflect?<>
     <label>Kết quả *</label><select value={form.completion_status} onChange={e=>setForm({...form,completion_status:e.target.value})}><option>Hoàn thành</option><option>Một phần</option><option>Chưa hoàn thành</option></select>
-    <label>Ghi chú sau giờ tự học</label><textarea rows="2" maxLength={1000} value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Điều em muốn ghi lại…"/>
+    <label>Em đã làm được gì? *</label><textarea rows="3" minLength={10} maxLength={1000} value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Ví dụ: Em làm xong bài 5–10 và tự dò lại đáp án. Bài 9 em vẫn chưa chắc cách làm."/>
+    <small className="muted-text reflection-hint">Chỉ cần một vài câu thật và cụ thể. Phần này giúp em nhìn lại việc học, không cần viết dài.</small>
     <div className="toggle-row"><label className="switch"><input type="checkbox" checked={form.need_help} onChange={e=>setForm({...form,need_help:e.target.checked})}/><span/></label><div><strong>Em cần giáo viên hỗ trợ</strong><small>Bật khi em còn vướng và muốn giáo viên biết.</small></div></div>
     {form.need_help&&<input maxLength={500} value={form.help_note} onChange={e=>setForm({...form,help_note:e.target.value})} placeholder="Em cần hỗ trợ về…"/>}
-    <div className="evidence-block"><h3>Minh chứng <span className="muted-text">(tùy chọn, tối đa 3)</span></h3>
-      <p className="muted-text small">Em nộp theo cách nào cũng được: <strong>liên kết</strong>, <strong>ảnh/file</strong>, hoặc chỉ cần <strong>mô tả bằng chữ</strong> nếu sản phẩm nằm trong vở.</p>
+    <div className="evidence-block"><h3>Minh chứng <span className="muted-text">(khuyến khích · tối đa 3)</span></h3>
+      <p className="muted-text small">Nếu có sản phẩm, em thêm <strong>liên kết</strong>, <strong>ảnh/file</strong>, hoặc <strong>mô tả bằng chữ</strong> nếu bài nằm trong vở. Không có file cũng không sao.</p>
       {evidence.length>0&&<div className="evidence-list">{evidence.map(x=><span key={x.id} className="evidence-row">
         <button type="button" className="evidence-item" onClick={()=>openEvidence(x)}>
           {x.kind==='link'?'🔗':x.kind==='text'?'📝':'📎'} {x.kind==='text'?(x.body_text||'').slice(0,60)+((x.body_text||'').length>60?'…':''):(x.display_name||'Minh chứng')}
@@ -533,6 +537,7 @@ function ReflectionModal({plan,existing,evidence,onClose,onSaved}){
     </div>
     {msg&&<div className="form-error">{msg}</div>}
     <div className="form-actions"><button className="button ghost" onClick={onClose}>Đóng</button><button className="button primary big" onClick={save} disabled={busy}><FileUp size={19}/>{busy?'Đang lưu…':'Lưu kết quả'}</button></div>
+    </>:<div className="detail-box reflection-not-ready"><strong>Chưa tới lúc cập nhật kết quả</strong><p>Em có thể quay lại sau khi buổi tự học kết thúc. Lúc đó hệ thống sẽ nhắc và đưa em tới đúng nhiệm vụ này.</p><button className="button ghost" onClick={onClose}>Đã hiểu</button></div>}
   </div></div>
 }
 

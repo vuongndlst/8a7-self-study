@@ -6,7 +6,7 @@
 // Nguyên tắc quan trọng nhất ở đây: TÀI KHOẢN GIÁO VIÊN LÀ DUY NHẤT THEO EMAIL.
 // Sang năm mới hoặc nhận thêm lớp thì CHỈ thêm phân công, không tạo lại tài khoản
 // — nếu tạo lại, thầy cô sẽ mất mật khẩu đang dùng và mất lịch sử đã xử lý.
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2'
 import { corsHeaders, json } from '../_shared/common.ts'
 
 // Mật khẩu tạm dễ đọc khi đọc qua điện thoại: không có ký tự dễ nhìn nhầm

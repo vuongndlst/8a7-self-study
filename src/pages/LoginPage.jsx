@@ -99,7 +99,7 @@ export default function LoginPage() {
                onChange={(e) => setTeacher({ ...teacher, password: e.target.value })}
                autoComplete="current-password" required />
         {error && <div className="form-error">{error}</div>}
-        <button className="button primary full large" disabled={busy}><ShieldCheck size={18} />{busy ? 'Đang đăng nhập…' : 'Vào Teacher Dashboard'}</button>
+        <button className="button primary full large" disabled={busy}><ShieldCheck size={18} />{busy ? 'Đang đăng nhập…' : 'Vào trang giáo viên'}</button>
         <p className="auth-switch">
           <button type="button" className="link-button" onClick={() => setForgot('teacher')}>Quên mật khẩu?</button>
         </p>

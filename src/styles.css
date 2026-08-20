@@ -713,6 +713,8 @@ th,td{padding:11px 12px}
 
 /* ---------- v10: nhac viec, mien buoi, ky luat ---------- */
 .alert-modal{width:min(560px,100%)}
+.reflection-hint{display:block;margin-top:7px;line-height:1.5}
+.reflection-not-ready{margin-bottom:0}.reflection-not-ready p{line-height:1.55}
 .alert-item{display:flex;gap:13px;align-items:flex-start;padding:15px 16px;border-radius:15px;margin:12px 0;
   border:1px solid var(--line);background:#fff}
 .alert-item.danger{background:var(--danger-bg);border-color:#f0cdcd}

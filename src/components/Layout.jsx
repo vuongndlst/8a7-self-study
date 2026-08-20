@@ -1,4 +1,4 @@
-import { BookOpen, Home, LifeBuoy, Library, LogIn, LogOut, Settings, ShieldCheck } from 'lucide-react'
+import { BookOpen, ClipboardList, Home, LifeBuoy, Library, LogIn, LogOut, Settings, ShieldCheck } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import NotificationBell from './NotificationBell'
@@ -34,10 +34,10 @@ export default function Layout({ children }) {
       <nav>
         <Link className={active('/') ? 'active' : ''} to="/"><Home size={17} /> <span>Trang chủ</span></Link>
         <Link className={active('/guide') ? 'active' : ''} to="/guide"><BookOpen size={17} /> <span>Hướng dẫn</span></Link>
-        {profile?.role === 'student' && <Link className={active('/student') ? 'active' : ''} to="/student"><span>Kế hoạch của em</span></Link>}
+        {profile?.role === 'student' && <Link className={active('/student') ? 'active' : ''} to="/student"><ClipboardList size={17} /> <span>Kế hoạch của em</span></Link>}
         {profile && context.bookShare && <Link className={active('/books') ? 'active' : ''} to="/books"><Library size={17} /> <span>Chia sẻ sách</span></Link>}
         {profile?.role === 'student' && isAssistant && <Link className={active('/ta') ? 'active' : ''} to="/ta"><LifeBuoy size={17} /> <span>Trợ giảng</span></Link>}
-        {isStaff && <Link className={active('/teacher') ? 'active' : ''} to="/teacher"><ShieldCheck size={17} /> <span>Dashboard</span></Link>}
+        {isStaff && <Link className={active('/teacher') ? 'active' : ''} to="/teacher"><ShieldCheck size={17} /> <span>Giáo viên</span></Link>}
         {isAdmin && <Link className={active('/admin') ? 'active' : ''} to="/admin"><Settings size={17} /> <span>Quản trị</span></Link>}
         {profile && <NotificationBell onOpenPlan={openPlan} onOpenChat={openChat} />}
         {!profile && <Link className="nav-login" to="/login"><LogIn size={17} /> <span>Đăng nhập</span></Link>}

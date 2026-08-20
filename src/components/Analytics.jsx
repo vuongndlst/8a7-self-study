@@ -332,7 +332,7 @@ export function ClassAnalyticsView({ data, busy, err, reload, range: r, classNam
 
       <div className="notice compact"><Info size={16} /><span>
         Nhiệm vụ <strong>chưa tới ngày</strong> không được tính vào tỷ lệ cập nhật và tỷ lệ hoàn thành —
-        các em chưa có cơ hội làm. Mọi con số đều tính lại từ CSDL theo đúng khoảng ngày đang chọn.
+        các em chưa có cơ hội làm. Mọi con số đều được tính lại từ dữ liệu trong đúng khoảng ngày đang chọn.
       </span></div>
     </>}
   </div>

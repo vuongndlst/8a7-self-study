@@ -40,8 +40,8 @@ create table if not exists public.classes (
   unique (school_year_id, name)
 );
 
--- Cho phép đăng ký trong chính ngày tự học hay không. Hạn khóa là 24:00 đêm hôm
--- trước, nên "trễ" ở đây nghĩa là đăng ký khi ngày tự học đã bắt đầu.
+-- Cho phép đăng ký trong chính ngày tự học hay không. Hạn khóa là 24:00 của ngày
+-- hôm trước (0:00 ngày tự học), nên "trễ" nghĩa là đăng ký khi ngày đó đã bắt đầu.
 -- Mặc định BẬT: siết chặt là quyết định của giáo viên, không phải mặc định của hệ thống.
 alter table public.classes add column if not exists allow_late_registration boolean not null default true;
 
@@ -523,7 +523,7 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 -- Học sinh còn được đăng ký cho ngày này không?
--- Hạn khóa là 24:00 đêm hôm trước, nên đăng ký cho NGÀY MAI trở đi luôn hợp lệ;
+-- Hạn khóa là 24:00 của ngày hôm trước, nên đăng ký cho NGÀY MAI trở đi luôn hợp lệ;
 -- đăng ký cho CHÍNH NGÀY HÔM NAY là "trễ" và chỉ được phép khi lớp còn mở.
 -- security definer vì học sinh không cần đọc được cột cấu hình của lớp.
 create or replace function public.can_register_on(p_class uuid, p_date date)
@@ -1644,7 +1644,7 @@ for insert to authenticated
 with check (
   student_id = auth.uid()
   and class_id = public.student_active_class(auth.uid())
-  -- Hạn khóa 24:00 đêm hôm trước. Chặn ở RLS chứ không chỉ ở giao diện, nếu không
+  -- Hạn khóa là 24:00 của ngày hôm trước. Chặn ở RLS chứ không chỉ ở giao diện, nếu không
   -- một lệnh gọi API thẳng là qua mặt được cả quy định của lớp.
   and public.can_register_on(class_id, study_date)
 );

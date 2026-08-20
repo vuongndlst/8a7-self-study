@@ -130,14 +130,14 @@ $fn$;
 
 
 -- ============================================================================
---  39. GHI NHẬN NHỮNG LẦN QUÊN — CHẠY CUỐI NGÀY
+--  39. GHI NHẬN NHỮNG LẦN QUÊN — CHẠY SAU KHI NGÀY KẾT THÚC
 -- ============================================================================
--- Chạy lúc 23:00 giờ Việt Nam, tức SAU khi hết ngày học. Không chạy sớm hơn vì
--- lớp có thể đang bật "cho phép đăng ký trễ": em đăng ký trong ngày vẫn tính là
--- có đăng ký.
+-- Chạy lúc 00:05 giờ Việt Nam của ngày kế tiếp, sau mốc chốt 24:00. Lùi v_date
+-- một ngày để ghi nhận đúng ngày vừa kết thúc. Nhờ vậy, học sinh đăng ký trong
+-- giờ cuối cùng của ngày vẫn được tính là có đăng ký.
 create or replace function public.record_attendance_misses(p_date date default null)
 returns json language plpgsql security definer set search_path = public as $fn$
-declare v_date date := coalesce(p_date, public.vn_today()); n int := 0;
+declare v_date date := coalesce(p_date, public.vn_today() - 1); n int := 0;
 begin
   insert into public.attendance_misses (class_id, mshs, study_date, period)
   select pol.class_id, s.mshs, v_date, cs.period
@@ -161,9 +161,9 @@ end;
 $fn$;
 
 do $mig$ begin perform cron.unschedule('attendance-misses'); exception when others then null; end $mig$;
--- 16:00 UTC = 23:00 giờ Việt Nam.
+-- 17:05 UTC = 00:05 giờ Việt Nam của ngày hôm sau.
 do $mig$ begin
-  perform cron.schedule('attendance-misses', '0 16 * * *',
+  perform cron.schedule('attendance-misses', '5 17 * * *',
                         'select public.record_attendance_misses()');
 exception when others then raise notice 'Chua bat pg_cron'; end $mig$;
 

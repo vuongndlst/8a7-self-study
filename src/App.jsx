@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -6,13 +7,16 @@ import GuidePage from './pages/GuidePage'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
-import StudentPage from './pages/StudentPage'
-import TeacherPage from './pages/TeacherPage'
-import TaPage from './pages/TaPage'
-import AdminPage from './pages/AdminPage'
-import BooksPage from './pages/BooksPage'
 import NotFoundPage from './pages/NotFoundPage'
 import { useAuth } from './context/AuthContext'
+
+// Các khu vực theo vai trò khá lớn. Chỉ tải khi người dùng thật sự mở trang đó,
+// để học sinh không phải tải luôn mã của giáo viên và quản trị viên.
+const StudentPage = lazy(() => import('./pages/StudentPage'))
+const TeacherPage = lazy(() => import('./pages/TeacherPage'))
+const TaPage = lazy(() => import('./pages/TaPage'))
+const AdminPage = lazy(() => import('./pages/AdminPage'))
+const BooksPage = lazy(() => import('./pages/BooksPage'))
 
 export default function App() {
   const { recovery, profile } = useAuth()
@@ -21,7 +25,7 @@ export default function App() {
   // nên bắt ở đây thay vì trong router.
   if (recovery && profile) return <Layout><PasswordGate mode="recovery" /></Layout>
 
-  return <Layout>
+  return <Layout><Suspense fallback={<div className="page"><div className="empty-state">Đang mở trang…</div></div>}>
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/guide" element={<GuidePage />} />
@@ -34,5 +38,5 @@ export default function App() {
       <Route path="/admin" element={<ProtectedRoute role="admin"><AdminPage /></ProtectedRoute>} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
-  </Layout>
+  </Suspense></Layout>
 }

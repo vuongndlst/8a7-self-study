@@ -19,7 +19,7 @@ export default function RegisterPage() {
     setError('')
     const cleanName = form.fullName.trim().replace(/\s+/g, ' ')
     const cleanMshs = form.mshs.trim()
-    if (!cleanName || !/^\d{7}$/.test(cleanMshs)) return setError('Vui lòng nhập đúng họ tên và MSHS gồm 7 chữ số.')
+    if (!cleanName || !/^\d{7}$/.test(cleanMshs)) return setError('Em kiểm tra lại họ tên và MSHS nhé. MSHS cần có đúng 7 chữ số.')
     const passwordResult = validateStudentPassword(form.password, cleanMshs)
     if (!passwordResult.ok) return setError('Mật khẩu chưa đáp ứng đầy đủ các yêu cầu bên dưới.')
     if (form.password !== form.confirm) return setError('Hai lần nhập mật khẩu chưa khớp.')
@@ -30,7 +30,7 @@ export default function RegisterPage() {
     })
     if (fnError || !data?.ok) {
       setBusy(false)
-      return setError(data?.error || fnError?.message || 'Không thể tạo tài khoản.')
+      return setError(data?.error || 'Chưa tạo được tài khoản. Em thử lại sau ít phút nhé.')
     }
 
     const { error: loginError } = await supabase.auth.signInWithPassword({

@@ -81,7 +81,7 @@ export default function RosterPanel({ classId, className, yearName }) {
           <button className="button ghost" onClick={exportCsv} disabled={!rows.length}>
             <Download size={17} /> Xuất CSV</button>
           <button className="button primary" onClick={() => setImporting(true)}>
-            <FileSpreadsheet size={17} /> Import danh sách</button>
+            <FileSpreadsheet size={17} /> Nhập danh sách từ Excel</button>
         </div>
       </div>
 
@@ -89,9 +89,9 @@ export default function RosterPanel({ classId, className, yearName }) {
 
       {roster.length === 0 && !loading
         ? <div className="empty-state">
-            <p>Lớp chưa có học sinh nào. Hãy tải file mẫu và import danh sách để bắt đầu.</p>
+            <p>Lớp chưa có học sinh. Thầy cô tải file mẫu, điền danh sách rồi nhập vào hệ thống để bắt đầu.</p>
             <button className="button primary" onClick={() => setImporting(true)}>
-              <FileSpreadsheet size={17} /> Import danh sách học sinh</button>
+              <FileSpreadsheet size={17} /> Nhập danh sách học sinh</button>
           </div>
         : <>
             <div className="filters">
@@ -130,7 +130,7 @@ export default function RosterPanel({ classId, className, yearName }) {
 
     {batches.length > 0 && <section className="card">
       <div className="section-title"><div>
-        <h2><History size={19} /> Lịch sử import</h2>
+        <h2><History size={19} /> Lịch sử nhập danh sách</h2>
         <p>Dùng để đối chiếu khi nhập nhầm file.</p>
       </div></div>
       <div className="table-wrap"><table>

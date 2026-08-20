@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "test": "node --test",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -13,14 +14,14 @@
     "regress": "node scripts/regress.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.0",
-    "lucide-react": "^0.468.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-router-dom": "^6.28.0"
+    "@supabase/supabase-js": "2.112.2",
+    "lucide-react": "0.468.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-router-dom": "6.30.4"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.0"
+    "@vitejs/plugin-react": "4.7.0",
+    "vite": "6.4.3"
   }
 }
