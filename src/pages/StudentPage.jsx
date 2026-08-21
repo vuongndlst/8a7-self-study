@@ -474,7 +474,8 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
       const shrunk=await shrinkImage(file)
       if(shrunk.after>12*1024*1024){setBusy(false);return setMsg('Ảnh vẫn vượt quá 12 MB sau khi xử lý. Em chọn ảnh khác hoặc chụp lại ở độ phân giải thấp hơn nhé.')}
       const safeExt=shrunk.type==='application/pdf'?'pdf':shrunk.type==='image/webp'?'webp':shrunk.type==='image/png'?'png':'jpg'
-      const path=`${plan.student_id}/${plan.id}/${crypto.randomUUID()}.${safeExt}`
+      const uuid = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const path=`${plan.student_id}/${plan.id}/${uuid}.${safeExt}`
       const {error:upErr}=await supabase.storage.from('evidence').upload(path,shrunk.blob,{upsert:false,contentType:shrunk.type})
       if(upErr){console.error('Evidence upload failed',upErr);setBusy(false);return setMsg(evidenceUploadError(upErr))}
       const {error:e}=await supabase.from('evidence').insert({plan_id:plan.id,student_id:plan.student_id,kind:file.type.startsWith('image/')?'image':'file',storage_path:path,display_name:shrunk.name})

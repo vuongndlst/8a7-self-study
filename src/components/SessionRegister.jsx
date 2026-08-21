@@ -13,7 +13,7 @@ const PRIORITIES = ['Cao', 'Trung bình', 'Thấp']
 const WEEKDAY_LABEL = ['', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật']
 
 const emptyTask = () => ({
-  key: crypto.randomUUID(),
+  key: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36),
   subject: 'Toán', subject_other: '', activity_type: 'Bài tập cá nhân',
   task: '', goal: '', priority: 'Trung bình',
   use_device: false, device_purpose: '',

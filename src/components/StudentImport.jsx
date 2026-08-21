@@ -73,7 +73,7 @@ export default function StudentImport({ classId, className, yearName, onClose, o
 
     setRows(parsed)
     setPreview(data ?? [])
-    setToken(crypto.randomUUID())
+    setToken(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36))
     setStage('preview')
   }
 
