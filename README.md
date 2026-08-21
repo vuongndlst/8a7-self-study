@@ -7,7 +7,7 @@ nhiều giáo viên và nhiều năm học. Trường THCS & THPT Đinh Thiện 
 
 - Frontend: React + Vite · Hosting: GitHub Pages · Backend: Supabase
 - Routing: HashRouter (không lỗi 404 khi refresh trên GitHub Pages)
-- Tiết tự học 1–9 · Minh chứng: **mô tả bằng chữ**, ảnh/PDF ≤ 5 MB, hoặc link — tối đa 3/nhiệm vụ
+- Tiết tự học 1–9 · Minh chứng: **mô tả bằng chữ**, ảnh ≤ 12 MB, PDF ≤ 5 MB, hoặc link — tối đa 3/nhiệm vụ
 
 ## 1. Mô hình dữ liệu (đa năm học, đa lớp, đa giáo viên)
 
@@ -569,7 +569,7 @@ Minh chứng có **bốn dạng** (`evidence.kind`), tối đa 3 mục mỗi nhi
 | kind | Lưu ở | Dùng khi |
 |---|---|---|
 | `text` | `body_text` (1–2000 ký tự) | Sản phẩm nằm trong vở — chỉ cần tả lại đã làm gì |
-| `image` / `file` | Storage `evidence/`, signed URL | Ảnh chụp bài, PDF ≤ 5 MB |
+| `image` / `file` | Storage `evidence/`, signed URL | Ảnh chụp bài ≤ 12 MB, PDF ≤ 5 MB |
 | `link` | `external_url` | Canva, Google Docs, Padlet… |
 
 `kind='text'` là bổ sung mới; ràng buộc `evidence_location` chặn text rỗng, và chặn nhầm
@@ -897,6 +897,9 @@ không nộp được bài.
 
 Vì ảnh được nén trước khi lên, mốc cho phép nâng từ 5 MB lên **12 MB cho ảnh**; PDF tải lên
 nguyên trạng nên vẫn giữ 5 MB.
+
+Bucket `evidence` phải cho phép `image/webp` và có `file_size_limit` 12 MB. Nếu bucket chỉ
+nhận JPEG/PNG, chính ảnh đã nén thành WebP sẽ bị Storage từ chối dù file nhẹ hơn.
 
 ### Vì sao không chuyển kho ảnh sang Google Drive
 

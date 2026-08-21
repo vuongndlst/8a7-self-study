@@ -9,6 +9,7 @@ import { formatDate, registrationStatus, todayISO } from '../utils/date'
 import { canUpdateReflection, isReflectionDue, reflectionReminder } from '../utils/studentReminders'
 import { sessionTimeLabel } from '../utils/schoolSchedule'
 import { passwordChecks, validateStudentPassword } from '../utils/password'
+import { evidenceUploadError } from '../utils/storageErrors'
 import StatusBadge from '../components/StatusBadge'
 import RatingStars, { ratingTone, ratingLabel } from '../components/RatingStars'
 import ChatPanel, { getOrCreateConversation } from '../components/ChatPanel'
@@ -471,10 +472,11 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
       // Ảnh được thu nhỏ ngay trên máy em trước khi tải lên — nhẹ hơn khoảng 6 lần
       // mà nhìn vẫn rõ. PDF thì giữ nguyên.
       const shrunk=await shrinkImage(file)
+      if(shrunk.after>12*1024*1024){setBusy(false);return setMsg('Ảnh vẫn vượt quá 12 MB sau khi xử lý. Em chọn ảnh khác hoặc chụp lại ở độ phân giải thấp hơn nhé.')}
       const safeExt=shrunk.type==='application/pdf'?'pdf':shrunk.type==='image/webp'?'webp':shrunk.type==='image/png'?'png':'jpg'
       const path=`${plan.student_id}/${plan.id}/${crypto.randomUUID()}.${safeExt}`
       const {error:upErr}=await supabase.storage.from('evidence').upload(path,shrunk.blob,{upsert:false,contentType:shrunk.type})
-      if(upErr){setBusy(false);return setMsg('Đã lưu kết quả nhưng upload file chưa thành công.')}
+      if(upErr){console.error('Evidence upload failed',upErr);setBusy(false);return setMsg(evidenceUploadError(upErr))}
       const {error:e}=await supabase.from('evidence').insert({plan_id:plan.id,student_id:plan.student_id,kind:file.type.startsWith('image/')?'image':'file',storage_path:path,display_name:shrunk.name})
       if(e){await supabase.storage.from('evidence').remove([path]);setBusy(false);return setMsg('Không thể ghi nhận file minh chứng.')}
     }

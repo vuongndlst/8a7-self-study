@@ -1842,7 +1842,7 @@ grant select on public.help_requests to authenticated;
 
 -- ---------- Storage ----------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('evidence','evidence',false,5242880,array['image/jpeg','image/png','application/pdf'])
+values ('evidence','evidence',false,12582912,array['image/jpeg','image/png','image/webp','application/pdf'])
 on conflict (id) do update set
   public = excluded.public,
   file_size_limit = excluded.file_size_limit,
