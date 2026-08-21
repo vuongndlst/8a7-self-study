@@ -450,7 +450,6 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
     if(form.note.trim().length<10){setBusy(false);return setMsg('Phần "Em đã làm được gì?" cần ít nhất 10 ký tự.')}
     const additions=(link.trim()?1:0)+(file?1:0)+(note.trim()?1:0)
     if(evidence.length+additions>3){setBusy(false);return setMsg('Tối đa 3 minh chứng cho mỗi tiết.')}
-    if(note.trim()&&note.trim().length<10){setBusy(false);return setMsg('Phần "Mô tả minh chứng" cần ít nhất 10 ký tự.')}
     if(form.need_help&&!form.help_note.trim()){setBusy(false);return setMsg('Hãy ghi ngắn gọn điều em cần hỗ trợ.')}
     if(link.trim()){try{new URL(link.trim())}catch{setBusy(false);return setMsg('Liên kết minh chứng chưa hợp lệ.')}}
     if(file){
