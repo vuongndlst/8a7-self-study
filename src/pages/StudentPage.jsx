@@ -428,7 +428,7 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
   const [ack,setAck]=useState(existing?.student_ack_note||'')
   const [ackBusy,setAckBusy]=useState(false)
   const [ackMsg,setAckMsg]=useState('')
-  const [link,setLink]=useState('');const [file,setFile]=useState(null);const [note,setNote]=useState('')
+  const [link,setLink]=useState('');const [file,setFile]=useState(null)
   const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('')
   const lowRating=existing?.rating!=null&&existing.rating<=2
   const canReflect=Boolean(existing)||canUpdateReflection(availableAt)||isReflectionDue(progress)||progress==='Hệ thống tự đánh giá'
@@ -448,7 +448,7 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
     setBusy(true);setMsg('')
     if(!canReflect){setBusy(false);return setMsg('Em có thể cập nhật kết quả từ khi tiết tự học bắt đầu.')}
     if(form.note.trim().length<10){setBusy(false);return setMsg('Phần "Em đã làm được gì?" cần ít nhất 10 ký tự.')}
-    const additions=(link.trim()?1:0)+(file?1:0)+(note.trim()?1:0)
+    const additions=(link.trim()?1:0)+(file?1:0)
     if(evidence.length+additions>3){setBusy(false);return setMsg('Tối đa 3 minh chứng cho mỗi tiết.')}
     if(form.need_help&&!form.help_note.trim()){setBusy(false);return setMsg('Hãy ghi ngắn gọn điều em cần hỗ trợ.')}
     if(link.trim()){try{new URL(link.trim())}catch{setBusy(false);return setMsg('Liên kết minh chứng chưa hợp lệ.')}}
@@ -479,11 +479,6 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
       if(upErr){console.error('Evidence upload failed',upErr);setBusy(false);return setMsg(evidenceUploadError(upErr))}
       const {error:e}=await supabase.from('evidence').insert({plan_id:plan.id,student_id:plan.student_id,kind:file.type.startsWith('image/')?'image':'file',storage_path:path,display_name:shrunk.name})
       if(e){await supabase.storage.from('evidence').remove([path]);setBusy(false);return setMsg('Không thể ghi nhận file minh chứng.')}
-    }
-    if(note.trim()){
-      const {error:e}=await supabase.from('evidence').insert({plan_id:plan.id,student_id:plan.student_id,kind:'text',
-        body_text:note.trim().slice(0,2000),display_name:'Mô tả kết quả'})
-      if(e){setBusy(false);return setMsg('Đã lưu kết quả nhưng chưa thêm được phần mô tả.')}
     }
     setBusy(false);onSaved()
   }
@@ -527,12 +522,12 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
     </div>}
     {canReflect?<>
     <label>Kết quả *</label><select value={form.completion_status} onChange={e=>setForm({...form,completion_status:e.target.value})}><option>Hoàn thành</option><option>Một phần</option><option>Chưa hoàn thành</option></select>
-    <label>Em đã làm được gì? *</label><textarea rows="3" minLength={10} maxLength={1000} value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Ví dụ: Em làm xong bài 5–10 và tự dò lại đáp án. Bài 9 em vẫn chưa chắc cách làm."/>
+    <label>Em đã làm được gì? *</label><textarea rows="3" minLength={10} maxLength={1000} value={form.note} onChange={e=>setForm({...form,note:e.target.value})} placeholder="Ví dụ: Em làm xong bài tập 1, 2, 3 (có trong ảnh đính kèm) và tự dò lại đáp án."/>
     <small className="muted-text reflection-hint">Chỉ cần một vài câu thật và cụ thể. Phần này giúp em nhìn lại việc học, không cần viết dài.</small>
     <div className="toggle-row"><label className="switch"><input type="checkbox" checked={form.need_help} onChange={e=>setForm({...form,need_help:e.target.checked})}/><span/></label><div><strong>Em cần giáo viên hỗ trợ</strong><small>Bật khi em còn vướng và muốn giáo viên biết.</small></div></div>
     {form.need_help&&<input maxLength={500} value={form.help_note} onChange={e=>setForm({...form,help_note:e.target.value})} placeholder="Em cần hỗ trợ về…"/>}
     <div className="evidence-block"><h3>Minh chứng <span className="muted-text">(khuyến khích · tối đa 3)</span></h3>
-      <p className="muted-text small">Nếu có sản phẩm, em thêm <strong>liên kết</strong>, <strong>ảnh/file</strong>, hoặc <strong>mô tả bằng chữ</strong> nếu bài nằm trong vở. Không có file cũng không sao.</p>
+      <p className="muted-text small">Nếu có sản phẩm, em thêm <strong>liên kết</strong> hoặc <strong>ảnh/file</strong>. Không có file cũng không sao.</p>
       {evidence.length>0&&<div className="evidence-list">{evidence.map(x=><span key={x.id} className="evidence-row">
         <button type="button" className="evidence-item" onClick={()=>openEvidence(x)}>
           {x.kind==='link'?'🔗':x.kind==='text'?'📝':'📎'} {x.kind==='text'?(x.body_text||'').slice(0,60)+((x.body_text||'').length>60?'…':''):(x.display_name||'Minh chứng')}
@@ -541,9 +536,6 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
         <button type="button" className="evidence-item" title="Xóa minh chứng" onClick={()=>removeEvidence(x)}>✕</button>
       </span>)}</div>}
       {evidence.length<3&&<>
-        <label>Mô tả minh chứng bằng chữ</label>
-        <textarea rows="2" maxLength={2000} value={note} onChange={e=>setNote(e.target.value)}
-                  placeholder="Ví dụ: Đây là vở bài tập Toán trang 24."/>
         <label>Upload ảnh/PDF (ảnh ≤ 12 MB · PDF ≤ 5 MB)</label>
         <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/>
         {file?.type?.startsWith('image/')&&<small className="muted-text">Ảnh sẽ được tự động thu nhỏ trước khi gửi để tiết kiệm dung lượng — chất lượng vẫn đủ rõ để thầy cô xem.</small>}
