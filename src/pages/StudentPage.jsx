@@ -447,10 +447,10 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
   const save=async()=>{
     setBusy(true);setMsg('')
     if(!canReflect){setBusy(false);return setMsg('Em có thể cập nhật kết quả từ khi tiết tự học bắt đầu.')}
-    if(form.note.trim().length<10){setBusy(false);return setMsg('Hãy viết ít nhất 10 ký tự để nhìn lại em đã làm được gì.')}
+    if(form.note.trim().length<10){setBusy(false);return setMsg('Phần "Em đã làm được gì?" cần ít nhất 10 ký tự.')}
     const additions=(link.trim()?1:0)+(file?1:0)+(note.trim()?1:0)
     if(evidence.length+additions>3){setBusy(false);return setMsg('Tối đa 3 minh chứng cho mỗi tiết.')}
-    if(note.trim()&&note.trim().length<10){setBusy(false);return setMsg('Phần mô tả kết quả cần ít nhất 10 ký tự để thầy cô hiểu em đã làm gì.')}
+    if(note.trim()&&note.trim().length<10){setBusy(false);return setMsg('Phần "Mô tả minh chứng" cần ít nhất 10 ký tự.')}
     if(form.need_help&&!form.help_note.trim()){setBusy(false);return setMsg('Hãy ghi ngắn gọn điều em cần hỗ trợ.')}
     if(link.trim()){try{new URL(link.trim())}catch{setBusy(false);return setMsg('Liên kết minh chứng chưa hợp lệ.')}}
     if(file){
@@ -542,9 +542,9 @@ function ReflectionModal({plan,progress,availableAt,existing,evidence,onClose,on
         <button type="button" className="evidence-item" title="Xóa minh chứng" onClick={()=>removeEvidence(x)}>✕</button>
       </span>)}</div>}
       {evidence.length<3&&<>
-        <label>Mô tả kết quả bằng chữ</label>
+        <label>Mô tả minh chứng bằng chữ</label>
         <textarea rows="2" maxLength={2000} value={note} onChange={e=>setNote(e.target.value)}
-                  placeholder="Ví dụ: Em đã làm xong bài 5–10 trang 24 trong vở Toán, có tự dò lại đáp án."/>
+                  placeholder="Ví dụ: Đây là vở bài tập Toán trang 24."/>
         <label>Upload ảnh/PDF (ảnh ≤ 12 MB · PDF ≤ 5 MB)</label>
         <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/>
         {file?.type?.startsWith('image/')&&<small className="muted-text">Ảnh sẽ được tự động thu nhỏ trước khi gửi để tiết kiệm dung lượng — chất lượng vẫn đủ rõ để thầy cô xem.</small>}
